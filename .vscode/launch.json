@@ -1,0 +1,29 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "GDB",
+            "type": "gdb",
+            "request": "attach",
+            "cwd": "${workspaceRoot}",
+            "executable": "${workspaceFolder}/target/aarch64-unknown-none/debug/example",
+            "remote": true,
+            "target": ":1234",
+            "stopAtConnect": true
+        },
+        {
+            "name": "CodeLLDB",
+            "type": "lldb",
+            "request": "launch",
+            "targetCreateCommands": [
+                "target create ${workspaceFolder}/target/aarch64-unknown-none/debug/example"
+            ],
+            "processCreateCommands": [
+                "gdb-remote localhost:1234"
+            ]
+        }
+    ]
+}

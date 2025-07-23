@@ -1,0 +1,23 @@
+[package]
+name = "example"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["qemu"]
+qemu = []
+kr260 = []
+
+[dependencies]
+arm64 = { git = "https://github.com/moritz-meier/arm64-rt.git", features = [
+    "critical-section",
+    "cortex-a53",
+] }
+
+embedded-hal-nb = "*"
+
+sel4-pl011-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }
+sel4-zynqmp-xuartps-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }
+
+[build-dependencies]
+quote = "1.0.40"
