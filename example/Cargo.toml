@@ -14,8 +14,11 @@ arm64 = { git = "https://github.com/moritz-meier/arm64-rt.git", features = [
     "cortex-a53",
 ] }
 
-embedded-hal-nb = "*"
+embedded-alloc = { version = "0.6.0" }
 
+wasm-interpreter = { git = "https://github.com/moritz-meier/wasm-interpreter.git", branch = "feat/fuel" }
+
+embedded-hal-nb = "*"
 sel4-pl011-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }
 sel4-zynqmp-xuartps-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }
 
