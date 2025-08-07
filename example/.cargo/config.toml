@@ -2,4 +2,4 @@
 target = "aarch64-unknown-none"
 
 [target.aarch64-unknown-none]
-runner = "qemu-system-aarch64 -M virt,virtualization=on -cpu cortex-a53 -smp 4 -m size=4G -nographic -serial mon:stdio -S -s -kernel"
+runner = "qemu-system-aarch64 -M virt,virtualization=on -cpu cortex-a53 -smp 4 -m size=4G -nographic -serial mon:stdio -kernel"

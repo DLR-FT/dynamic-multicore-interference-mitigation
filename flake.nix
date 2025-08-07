@@ -7,6 +7,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    trace32 = {
+      url = "git+https://gitlab.dlr.de/ft-ssy-avs/ast/lauterbach-trace32-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     devshell = {
       url = "github:numtide/devshell";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -23,6 +28,7 @@
       self,
       nixpkgs,
       rust,
+      trace32,
       devshell,
       treefmt,
     }:
@@ -34,6 +40,7 @@
 
         overlays = [
           (import rust)
+          trace32.overlays.default
           devshell.overlays.default
         ];
       };
@@ -80,6 +87,7 @@
             crossPkgs.aarch64-embedded.stdenv.cc
             rust-toolchain
             pkgs.qemu_full
+            pkgs.trace32-2024-02
           ];
 
           git.hooks = {

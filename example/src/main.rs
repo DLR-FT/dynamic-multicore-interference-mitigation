@@ -14,6 +14,7 @@ use embedded_alloc::LlffHeap as Heap;
 
 mod excps;
 mod plat;
+mod systick;
 mod uart;
 mod wasm;
 
@@ -22,7 +23,7 @@ use plat::*;
 use uart::*;
 use wasm::*;
 
-const HEAP_SIZE: usize = 2 * 1024 * 1024 * 1024;
+const HEAP_SIZE: usize = 1 * 1024 * 1024 * 1024; // 1GiB heap
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -42,15 +43,22 @@ unsafe fn main(info: EntryInfo) -> ! {
     });
 
     UartWriter
-        .write_fmt(format_args!("Hello World! cpu_idx = {}\n", info.cpu_idx))
+        .write_fmt(format_args!("Hello World! cpu_idx = {}\r\n", info.cpu_idx))
         .unwrap();
 
-    Psci::cpu_on_64::<Smccc<SMC>>(
-        1,
-        (start::<SecEntryImpl, Excps> as *const fn() -> !) as u64,
-        0,
-    )
-    .unwrap();
+    UartWriter.write_str("running wasm ...").unwrap();
+
+    const WASM_BYTES: &[u8] = include_bytes!("../2mm.wasm");
+    run_wasm(WASM_BYTES).unwrap();
+
+    UartWriter.write_str("done.").unwrap();
+
+    // Psci::cpu_on_64::<Smccc<SMC>>(
+    //     1,
+    //     (start::<SecEntryImpl, Excps> as *const fn() -> !) as u64,
+    //     0,
+    // )
+    // .unwrap();
 
     loop {
         unsafe { core::arch::asm!("nop") };
@@ -66,24 +74,18 @@ impl Entry for SecEntryImpl {
 }
 
 unsafe fn sec_main(info: EntryInfo) -> ! {
-    const WASM_BYTES: &[u8] = include_bytes!("../3mm.wasm");
-
     ICache::enable();
     DCache::enable();
 
     UartWriter
-        .write_fmt(format_args!("Hello World! cpu_idx = {}\n", info.cpu_idx))
+        .write_fmt(format_args!("Hello World! cpu_idx = {}\r\n", info.cpu_idx))
         .unwrap();
-
-    UartWriter.write_str("running wasm ...").unwrap();
-
-    run_wasm(WASM_BYTES).unwrap();
-
-    UartWriter.write_str("done.").unwrap();
 
     // Psci::cpu_off::<Smccc<SMC>>().unwrap();
 
-    loop {}
+    loop {
+        unsafe { core::arch::asm!("nop") };
+    }
 }
 
 #[panic_handler]
@@ -91,5 +93,8 @@ fn panic(_info: &PanicInfo) -> ! {
     UartWriter
         .write_fmt(format_args!("{}", _info.message()))
         .unwrap();
-    loop {}
+
+    loop {
+        unsafe { core::arch::asm!("nop") };
+    }
 }

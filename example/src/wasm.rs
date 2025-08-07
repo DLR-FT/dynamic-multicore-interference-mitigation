@@ -1,4 +1,8 @@
+use core::fmt::Write;
+
 use wasm::{RuntimeInstance, validate};
+
+use crate::{systick::SysTick, uart::UartWriter};
 
 pub fn run_wasm(wasm_bytes: &[u8]) -> Result<(), ()> {
     let validation_info = match validate(&wasm_bytes) {
@@ -15,7 +19,11 @@ pub fn run_wasm(wasm_bytes: &[u8]) -> Result<(), ()> {
         }
     };
 
-    instance.set_fuel(Some(1));
+    let df = 1000;
+
+    instance.set_fuel(Some(df));
+
+    let mut last_time: u64 = SysTick::get_time_us();
 
     let mut state = instance
         .invoke_resumable(
@@ -34,7 +42,19 @@ pub fn run_wasm(wasm_bytes: &[u8]) -> Result<(), ()> {
                 break;
             }
             wasm::InvocationState::OutOfFuel(mut res) => {
-                res.set_fuel(Some(1000));
+                let curr_time = SysTick::get_time_us();
+                let dt = curr_time - last_time;
+
+                UartWriter
+                    .write_fmt(format_args!(
+                        "dt/df: {}us / {}instr refuel ....\r\n",
+                        dt, df
+                    ))
+                    .unwrap();
+
+                last_time = SysTick::get_time_us();
+
+                res.set_fuel(Some(df));
                 state = res.resume().unwrap();
             }
             wasm::InvocationState::Canceled => {

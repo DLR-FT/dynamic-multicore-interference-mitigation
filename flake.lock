@@ -41,6 +41,7 @@
         "devshell": "devshell",
         "nixpkgs": "nixpkgs",
         "rust": "rust",
+        "trace32": "trace32",
         "treefmt": "treefmt"
       }
     },
@@ -62,6 +63,26 @@
         "owner": "oxalica",
         "repo": "rust-overlay",
         "type": "github"
+      }
+    },
+    "trace32": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1744206634,
+        "narHash": "sha256-1mooPNhTv4GFNULV9hKm2E+LLSH9AjOSLSS9crzaO00=",
+        "ref": "refs/heads/main",
+        "rev": "1bd8a073ec4152401b5c3f24af8dbeed4f20bafe",
+        "revCount": 9,
+        "type": "git",
+        "url": "https://gitlab.dlr.de/ft-ssy-avs/ast/lauterbach-trace32-flake"
+      },
+      "original": {
+        "type": "git",
+        "url": "https://gitlab.dlr.de/ft-ssy-avs/ast/lauterbach-trace32-flake"
       }
     },
     "treefmt": {

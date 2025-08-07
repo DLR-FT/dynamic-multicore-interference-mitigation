@@ -1,0 +1,36 @@
+WinCLEAR
+
+
+RESet
+SYStem.RESet
+
+SYStem.CPU ZYNQ-ULTRASCALE+-APU
+SYStem.Option TRST OFF
+SYStem.Option EnReset OFF
+
+; Use ZynqMP PJTAG - Only ARM-DAP
+SYStem.CONFIG DAPIRPOST 0
+SYStem.CONFIG DAPDRPOST 0
+SYStem.CONFIG DAPIRPRE 0
+SYStem.CONFIG DAPDRPRE 0
+
+SYStem.Mode Attach
+
+Trace.Method Analyzer
+SYStem.CONFIG.TRACEPORT.Type.AURORA
+SYStem.CONFIG.TRACEPORT1.TraceSource TPIU
+
+TRACEPORT.LaneCount 2lane
+TRACEPORT.LaneSpeed 6250Mbps
+TRACEPORT.RefCLocK 1/40
+TRACEPORT.MsgBitEndian LittleEndian
+
+Analyzer.PortSize AUTO
+TPIU.PortSize 32
+TPIU.PortMode Continuous
+
+ETM.TImeMode CycleAccurate+External
+ETM.Clock 1050MHz
+ETM.Trace ON
+ETM.ON
+

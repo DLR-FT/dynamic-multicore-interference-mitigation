@@ -7,6 +7,13 @@ edition = "2024"
 default = ["qemu"]
 qemu = []
 kr260 = []
+tebf0818 = []
+
+
+[profile.release]
+split-debuginfo = "off"
+debug = false
+strip = "debuginfo"
 
 [dependencies]
 arm64 = { git = "https://github.com/moritz-meier/arm64-rt.git", features = [
