@@ -6,9 +6,9 @@ use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 
 use arm64::cache::{DCache, ICache};
-use arm64::psci::Psci;
+use arm64::smccc::*;
 use arm64::{Entry, EntryInfo, critical_section, entry};
-use arm64::{smccc::*, start};
+use arm64::{psci::*, start};
 
 use embedded_alloc::LlffHeap as Heap;
 
@@ -23,6 +23,8 @@ use plat::*;
 use uart::*;
 use wasm::*;
 
+use crate::systick::SysTick;
+
 const HEAP_SIZE: usize = 1 * 1024 * 1024 * 1024; // 1GiB heap
 
 #[global_allocator]
@@ -30,8 +32,8 @@ static HEAP: Heap = Heap::empty();
 
 #[entry(exceptions = Excps)]
 unsafe fn main(info: EntryInfo) -> ! {
-    ICache::enable();
-    DCache::enable();
+    // ICache::enable();
+    // DCache::enable();
 
     {
         static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
@@ -46,6 +48,29 @@ unsafe fn main(info: EntryInfo) -> ! {
         .write_fmt(format_args!("Hello World! cpu_idx = {}\r\n", info.cpu_idx))
         .unwrap();
 
+    Psci::cpu_on_64::<Smccc<SMC>>(
+        1,
+        (start::<IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
+        0,
+    )
+    .unwrap();
+
+    Psci::cpu_on_64::<Smccc<SMC>>(
+        2,
+        (start::<IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
+        0,
+    )
+    .unwrap();
+
+    Psci::cpu_on_64::<Smccc<SMC>>(
+        3,
+        (start::<IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
+        0,
+    )
+    .unwrap();
+
+    SysTick::wait_us(1000000);
+
     UartWriter.write_str("running wasm ...").unwrap();
 
     const WASM_BYTES: &[u8] = include_bytes!("../2mm.wasm");
@@ -53,35 +78,39 @@ unsafe fn main(info: EntryInfo) -> ! {
 
     UartWriter.write_str("done.").unwrap();
 
-    // Psci::cpu_on_64::<Smccc<SMC>>(
-    //     1,
-    //     (start::<SecEntryImpl, Excps> as *const fn() -> !) as u64,
-    //     0,
-    // )
-    // .unwrap();
-
     loop {
         unsafe { core::arch::asm!("nop") };
     }
 }
 
-struct SecEntryImpl;
+struct IntruderEntryImpl;
 
-impl Entry for SecEntryImpl {
+impl Entry for IntruderEntryImpl {
     unsafe extern "C" fn entry(info: EntryInfo) -> ! {
-        unsafe { sec_main(info) }
+        unsafe { intruder_main(info) }
     }
 }
 
-unsafe fn sec_main(info: EntryInfo) -> ! {
-    ICache::enable();
-    DCache::enable();
+unsafe fn intruder_main(info: EntryInfo) -> ! {
+    // ICache::enable();
+    // DCache::enable();
 
     UartWriter
         .write_fmt(format_args!("Hello World! cpu_idx = {}\r\n", info.cpu_idx))
         .unwrap();
 
-    // Psci::cpu_off::<Smccc<SMC>>().unwrap();
+    unsafe {
+        core::arch::asm!(
+            "ldr x0, ={x}",
+            // "mov x0, #0x"
+            // "2: ldr x1, [x0]",
+            // "str x1, [x0]",
+            "2: nop",
+            "nop",
+            "b 2b",
+            x = sym HEAP
+        )
+    }
 
     loop {
         unsafe { core::arch::asm!("nop") };
