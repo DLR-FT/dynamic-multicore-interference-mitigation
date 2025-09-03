@@ -1,14 +1,14 @@
-use core::{arch::asm, time::Duration};
+use arm64::sys_regs::{CNTFRQ_EL0, CNTPCT_EL0};
 
 pub struct SysTick;
 
 impl SysTick {
     pub fn get_cnt() -> u64 {
-        arm64::sysreg_read!("CNTPCT_EL0")
+        CNTPCT_EL0.read().CNT()
     }
 
     pub fn get_freq() -> u32 {
-        arm64::sysreg_read!("CNTFRQ_EL0")
+        CNTFRQ_EL0.read().FREQ()
     }
 
     pub fn get_time_us() -> u64 {

@@ -19,7 +19,7 @@ pub fn run_wasm(wasm_bytes: &[u8]) -> Result<(), ()> {
         }
     };
 
-    let df = 1000;
+    let df = 100000;
 
     instance.set_fuel(Some(df));
 
