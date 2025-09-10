@@ -88,6 +88,13 @@
             rust-toolchain
             pkgs.qemu_full
             pkgs.trace32-2024-02
+
+            (pkgs.python3.withPackages (python-pkgs: [
+              python-pkgs.jupyter
+              python-pkgs.ipython
+              python-pkgs.pip
+              python-pkgs.notebook
+            ]))
           ];
 
           git.hooks = {

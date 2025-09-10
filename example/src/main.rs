@@ -98,12 +98,12 @@ unsafe fn main(info: EntryInfo) -> ! {
         .write_fmt(format_args!("Hello World! cpu_idx = {}\r\n", info.cpu_idx))
         .unwrap();
 
-    Psci::cpu_on_64::<Smccc<SMC>>(
-        1,
-        (start::<IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
-        0,
-    )
-    .unwrap();
+    // Psci::cpu_on_64::<Smccc<SMC>>(
+    //     1,
+    //     (start::<IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
+    //     0,
+    // )
+    // .unwrap();
 
     // Psci::cpu_on_64::<Smccc<SMC>>(
     //     2,
@@ -121,18 +121,16 @@ unsafe fn main(info: EntryInfo) -> ! {
 
     SysTick::wait_us(1000 * 1000);
 
-    UartWriter.write_str("running wasm ...").unwrap();
-
-    const WASM_BYTES: &[u8] = include_bytes!("../2mm.wasm");
-    run_wasm(WASM_BYTES).unwrap();
-
-    UartWriter.write_str("done.").unwrap();
-
     loop {
-        unsafe {
-            // DCache::op_all(CacheOp::CleanInvalidate);
-            asm!("2:", "wfe", "b 2b",)
-        };
+        ICache::invalidate_all();
+        DCache::op_all(CacheOp::CleanInvalidate);
+
+        UartWriter.write_str("running wasm ...").unwrap();
+
+        const WASM_BYTES: &[u8] = include_bytes!("../2mm.wasm");
+        run_wasm(WASM_BYTES).unwrap();
+
+        UartWriter.write_str("done.").unwrap();
     }
 }
 
@@ -144,7 +142,7 @@ impl Entry for IntruderEntryImpl {
     }
 }
 
-static FOO: [u8; 64 * 1024 * 16] = [0; 64 * 1024 * 16];
+static FOO: [u8; 1024 * 1024] = [0; 1024 * 1024];
 
 unsafe fn intruder_main(info: EntryInfo) -> ! {
     critical_section::with(|cs| {
@@ -163,22 +161,23 @@ unsafe fn intruder_main(info: EntryInfo) -> ! {
         .unwrap();
 
     loop {
-        unsafe {
-            asm!(
-                "ldr x9, ={foo}",
-                "mov x10, #{len}",
-                "add x10, x9, 10",
-                "2:", // Start loop
-                "cmp x9, x10",
-                "b.hs 3f", // done
-                "mrs x11, CNTPCT_EL0",
-                "str x11, [x9], 0x8",
-                "b 2b",
-                "3:", // end
-                foo = sym FOO,
-                len = const FOO.len(),
-            )
-        };
+        // unsafe {
+        //     asm!(
+        //         "ldr x9, ={foo}",
+        //         "mov x10, #{len}",
+        //         "add x10, x9, 10",
+        //         "2:", // Start loop
+        //         "cmp x9, x10",
+        //         "b.hs 3f", // done
+        //         "mrs x11, CNTPCT_EL0",
+        //         "str x11, [x9], 0x8",
+        //         "b 2b",
+        //         "3:", // end
+        //         foo = sym FOO,
+        //         len = const FOO.len(),
+        //     )
+        // };
+        DCache::op_all(CacheOp::CleanInvalidate);
     }
 }
 

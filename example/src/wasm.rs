@@ -1,5 +1,6 @@
 use core::fmt::Write;
 
+use arm64::perf::PerfMonitor;
 use wasm::{RuntimeInstance, validate};
 
 use crate::{systick::SysTick, uart::UartWriter};
@@ -19,12 +20,16 @@ pub fn run_wasm(wasm_bytes: &[u8]) -> Result<(), ()> {
         }
     };
 
-    let df = 100000;
+    let df = 1000 * 100;
 
     instance.set_fuel(Some(df));
 
-    let mut last_time: u64 = SysTick::get_time_us();
+    PerfMonitor::enable_cycle_counter();
 
+    PerfMonitor::reset_cycle_counter();
+    let mut last_time = PerfMonitor::get_cycle_counter();
+
+    PerfMonitor::start_cycle_counter();
     let mut state = instance
         .invoke_resumable(
             &instance
@@ -42,19 +47,23 @@ pub fn run_wasm(wasm_bytes: &[u8]) -> Result<(), ()> {
                 break;
             }
             wasm::InvocationState::OutOfFuel(mut res) => {
-                let curr_time = SysTick::get_time_us();
+                PerfMonitor::stop_cycle_counter();
+                let curr_time = PerfMonitor::get_cycle_counter();
                 let dt = curr_time - last_time;
 
                 UartWriter
                     .write_fmt(format_args!(
-                        "dt/df: {}us / {}instr refuel ....\r\n",
+                        "dt/df: {} cycles / {}instr refuel ....\r\n",
                         dt, df
                     ))
                     .unwrap();
 
-                last_time = SysTick::get_time_us();
-
                 res.set_fuel(Some(df));
+
+                PerfMonitor::reset_cycle_counter();
+                last_time = PerfMonitor::get_cycle_counter();
+
+                PerfMonitor::start_cycle_counter();
                 state = res.resume().unwrap();
             }
             wasm::InvocationState::Canceled => {
