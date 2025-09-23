@@ -130,7 +130,7 @@ unsafe fn main(info: EntryInfo) -> ! {
     // )
     // .unwrap();
 
-    SysTick::wait_us(1000 * 1000);
+    // SysTick::wait_us(1000 * 1000);
 
     loop {
         ICache::invalidate_all();
@@ -147,9 +147,9 @@ unsafe fn main(info: EntryInfo) -> ! {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    // UartWriter
-    //     .write_fmt(format_args!("{}", _info.message()))
-    //     .unwrap();
+    UartWriter
+        .write_fmt(format_args!("{}", _info.message()))
+        .unwrap();
 
     loop {
         unsafe { core::arch::asm!("nop") };

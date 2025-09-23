@@ -78,8 +78,8 @@
             }
           );
         in
-        pkgs.devshell.mkShell {
-          imports = [ "${devshell}/extra/git/hooks.nix" ];
+        pkgs.mkShell {
+          # imports = [ "${devshell}/extra/git/hooks.nix" ];
 
           packages = [
             pkgs.gdb
@@ -90,20 +90,18 @@
             pkgs.trace32-2024-02
 
             (pkgs.python3.withPackages (python-pkgs: [
-              python-pkgs.jupyter
-              python-pkgs.ipython
-              python-pkgs.pip
-              python-pkgs.notebook
             ]))
           ];
 
-          git.hooks = {
-            enable = true;
-            pre-commit.text = ''
-              nix fmt
-              nix flake check
-            '';
-          };
+          LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib/";
+
+          # git.hooks = {
+          #   enable = true;
+          #   pre-commit.text = ''
+          #     nix fmt
+          #     nix flake check
+          #   '';
+          # };
         };
 
       # for `nix fmt`

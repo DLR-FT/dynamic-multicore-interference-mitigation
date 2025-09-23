@@ -3,7 +3,7 @@ use core::{fmt::Write, ops::Sub};
 use arm64::pmu::{CounterValue, PMU};
 use wasm::{RuntimeInstance, validate};
 
-use crate::uart::UartWriter;
+use crate::{systick::SysTick, uart::UartWriter};
 
 pub fn run_wasm(wasm_bytes: &[u8]) -> Result<(), ()> {
     let validation_info = match validate(&wasm_bytes) {
@@ -53,9 +53,12 @@ pub fn run_wasm(wasm_bytes: &[u8]) -> Result<(), ()> {
             }
             wasm::InvocationState::OutOfFuel(mut res) => {
                 let current = PerfState::get();
+                let time = SysTick::get_time_us();
                 let delta = current - last;
 
-                UartWriter.write_fmt(format_args!("{:?}\n", delta)).unwrap();
+                UartWriter
+                    .write_fmt(format_args!("{:?}: {:?}\n", time, delta))
+                    .unwrap();
 
                 res.set_fuel(Some(df));
 
