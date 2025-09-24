@@ -88,6 +88,7 @@
             rust-toolchain
             pkgs.qemu_full
             pkgs.trace32-2024-02
+            pkgs.stress-ng
 
             (pkgs.python3.withPackages (python-pkgs: [
             ]))
