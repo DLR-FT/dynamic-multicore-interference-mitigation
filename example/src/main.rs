@@ -109,12 +109,12 @@ unsafe fn main(info: EntryInfo) -> ! {
         ))
         .unwrap();
 
-    Psci::cpu_on_64::<Smccc<SMC>>(
-        1,
-        (start::<intruder::IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
-        0,
-    )
-    .unwrap();
+    // Psci::cpu_on_64::<Smccc<SMC>>(
+    //     1,
+    //     (start::<intruder::IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
+    //     0,
+    // )
+    // .unwrap();
 
     // Psci::cpu_on_64::<Smccc<SMC>>(
     //     2,

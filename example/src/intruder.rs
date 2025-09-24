@@ -2,7 +2,7 @@ use core::{arch::asm, fmt::Write};
 
 use arm64::{Entry, EntryInfo, cache::*, critical_section, mmu::*};
 
-use crate::{L0TABLE, systick::SysTick, uart::UartWriter};
+use crate::{L0TABLE, uart::UartWriter};
 
 pub struct IntruderEntryImpl;
 
@@ -47,7 +47,5 @@ unsafe fn intruder_main(info: EntryInfo) -> ! {
                 x = out(reg) _,
             )
         };
-
-        SysTick::wait_us(1000 * 1000);
     }
 }
