@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs?ref=master";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
 
     rust = {
       url = "github:oxalica/rust-overlay";
@@ -89,6 +89,7 @@
             pkgs.qemu_full
             pkgs.trace32-2024-02
             pkgs.stress-ng
+            pkgs.hwloc
 
             (pkgs.python3.withPackages (python-pkgs: [
             ]))
