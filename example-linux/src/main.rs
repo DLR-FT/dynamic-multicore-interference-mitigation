@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
-    fs,
+    fs::{self, File},
+    io::{BufWriter, Write},
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -21,7 +22,11 @@ use wasm_runner_serde::*;
 
 #[derive(Parser, Debug, Clone)]
 struct Args {
-    config_path: PathBuf,
+    #[arg(long)]
+    config: PathBuf,
+
+    #[arg(long)]
+    out: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -45,7 +50,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     trace!("{:?}", args);
 
-    let config = fs::read_to_string(args.config_path)?;
+    let config = fs::read_to_string(args.config)?;
     let config: Config = toml::from_str(&config)?;
     trace!("{:?}", config);
 
@@ -58,6 +63,9 @@ async fn main() -> Result<()> {
 
     let (buf_path, buf) = SharedRingBuffer::create_temp(4 * 1024)?;
     let recv = ipmpsc::Receiver::new(buf);
+
+    let out_file = File::create_new(args.out)?;
+    let mut out_writer = BufWriter::new(out_file);
 
     info!("Create main task");
     let mut main_task = Command::new(&config.main.cmd)
@@ -85,6 +93,7 @@ async fn main() -> Result<()> {
     trace!("CGroup pids: {:?}", child.get_pids()?);
 
     let mut child1 = child.clone();
+    let mut child2 = child.clone();
     select! {
         _ = signal::ctrl_c() => {
             info!("Ctrl-C ....");
@@ -92,12 +101,13 @@ async fn main() -> Result<()> {
          _ = tokio::spawn(async move {
             loop {
                 time::sleep(Duration::from_millis(5000)).await;
+                child1.unfreeze()?;
 
-                let f = child1.is_frozen()?;
-                match f {
-                    true => child1.unfreeze()?,
-                    false => child1.freeze()?,
-                }
+                // let f = child1.is_frozen()?;
+                // match f {
+                //     true => child1.unfreeze()?,
+                //     false => child1.freeze()?,
+                // }
             }
 
             Ok(())
@@ -105,15 +115,25 @@ async fn main() -> Result<()> {
 
         _ = tokio::spawn(async move {
             loop {
-                for _ in 0..9 {
+                for _ in 0..999 {
                     let x: Option<WasmMeasurement> = recv.try_recv()?;
                     match x {
-                        Some(m) => { info!("{:?}", m); continue },
+                        Some(m) => {
+
+                            if m.dt > Duration::from_micros(1000) {
+                                child2.freeze()?;
+                            }
+
+                            // info!("{:?}", m);
+                            out_writer.write_fmt(format_args!("{}, {}, {}, {}\n", m.timestamp_unix.as_nanos(), m.i, m.dt.as_nanos(), m.df))?;
+                            continue
+                        },
                         None => {break}
                     }
                 }
 
-                time::sleep(Duration::from_millis(10)).await;
+                out_writer.flush()?;
+                time::sleep(Duration::from_millis(1)).await;
             }
 
             Ok(())
@@ -126,6 +146,8 @@ async fn main() -> Result<()> {
 
     trace!("Kill main task");
     main_task.kill().await?;
+
+    // w.flush()?;
 
     info!("Remove child group ...");
     child.remove()?;

@@ -44,7 +44,7 @@ fn run_wasm(sender: &Sender) -> Result<()> {
         }
     };
 
-    let df = 1000 * 1000;
+    let df = 10 * 1000;
 
     instance.set_fuel(Some(df));
     let mut last = Instant::now();
@@ -77,15 +77,17 @@ fn run_wasm(sender: &Sender) -> Result<()> {
                     df,
                 };
 
-                match sender.send_timeout(&x, Duration::from_millis(25)) {
-                    Err(_) => println!(
-                        "----------------------------------------------------ipc error----------------------------------------------------"
-                    ),
-                    Ok(false) => println!(
-                        "----------------------------------------------------ipc timeout--------------------------------------------------"
-                    ),
-                    Ok(true) => {}
-                };
+                sender.send(&x)?;
+
+                // match sender.send_timeout(&x, Duration::from_millis(25)) {
+                //     Err(_) => println!(
+                //         "----------------------------------------------------ipc error----------------------------------------------------"
+                //     ),
+                //     Ok(false) => println!(
+                //         "----------------------------------------------------ipc timeout--------------------------------------------------"
+                //     ),
+                //     Ok(true) => {}
+                // };
 
                 res.set_fuel(Some(df));
                 i = i + 1;
