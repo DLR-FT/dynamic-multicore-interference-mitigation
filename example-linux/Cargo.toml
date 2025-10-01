@@ -1,0 +1,28 @@
+[package]
+name = "example-linux"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "*"
+clap = { version = "4.5.47", features = ["derive"] }
+hwloc = "*"
+itertools = "*"
+log = "*"
+env_logger = "*"
+nix = { version = "*", features = ["fs"] }
+procfs = "*"
+serde = { version = "*", features = ["derive"] }
+toml = "0.9.7"
+tokio = { version = "*", features = [
+    "macros",
+    "process",
+    "rt",
+    "signal",
+    "time",
+] }
+tokio-util = "*"
+walkdir = "*"
+
+[dev-dependencies]
+rand = "*"
