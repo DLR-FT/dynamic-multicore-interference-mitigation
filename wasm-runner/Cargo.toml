@@ -5,4 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "*"
+clap = { version = "4.5.47", features = ["derive"] }
+ipmpsc = "*"
+wasm-runner-serde = { path = "../wasm-runner-serde" }
 wasm-interpreter = { git = "https://github.com/moritz-meier/wasm-interpreter.git", branch = "feat/fuel" }

@@ -1,2 +1,2 @@
 [workspace]
-members = ["example", "example-linux", "wasm-runner"]
+members = ["example", "example-linux", "wasm-runner", "wasm-runner-serde"]

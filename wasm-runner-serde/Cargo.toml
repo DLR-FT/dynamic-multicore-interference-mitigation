@@ -1,0 +1,9 @@
+[package]
+name = "wasm-runner-serde"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "*", features = ["derive"] }
+serde_millis = "*"
+postcard = "*"

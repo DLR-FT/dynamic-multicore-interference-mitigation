@@ -7,6 +7,7 @@ edition = "2024"
 anyhow = "*"
 clap = { version = "4.5.47", features = ["derive"] }
 hwloc = "*"
+ipmpsc = "*"
 itertools = "*"
 log = "*"
 env_logger = "*"
@@ -23,6 +24,8 @@ tokio = { version = "*", features = [
 ] }
 tokio-util = "*"
 walkdir = "*"
+
+wasm-runner-serde = { path = "../wasm-runner-serde" }
 
 [dev-dependencies]
 rand = "*"

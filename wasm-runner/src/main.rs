@@ -1,39 +1,54 @@
-use std::time::Instant;
+use std::{
+    alloc::System,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::Result;
 
+use clap::Parser;
+use ipmpsc::{Sender, SharedRingBuffer};
 use wasm::*;
+use wasm_runner_serde::*;
 
 const WASM_BYTES: &[u8] = include_bytes!("../../2mm.wasm");
 
+#[derive(Parser, Debug, Clone)]
+struct Args {
+    #[arg(long)]
+    buf: String,
+}
+
 fn main() -> Result<()> {
-    println!("Hello, world!");
+    let args = Args::parse();
+
+    let buf = SharedRingBuffer::open(&args.buf)?;
+    let sender = Sender::new(buf);
 
     loop {
-        run_wasm()?;
+        run_wasm(&sender)?;
     }
 }
 
-fn run_wasm() -> Result<()> {
+fn run_wasm(sender: &Sender) -> Result<()> {
     let validation_info = match validate(&WASM_BYTES) {
         Ok(table) => table,
         Err(_err) => {
-            return Err(anyhow::anyhow!("dfhdfhdfdfh"));
+            return Err(anyhow::anyhow!("wasm error"));
         }
     };
 
     let mut instance = match RuntimeInstance::new(&validation_info) {
         Ok(instance) => instance,
         Err(_err) => {
-            return Err(anyhow::anyhow!("dfhdfhdfdfh"));
+            return Err(anyhow::anyhow!("wasm error"));
         }
     };
 
     let df = 1000 * 1000;
 
     instance.set_fuel(Some(df));
-
     let mut last = Instant::now();
+    let mut i = 0u32;
 
     let mut state = instance
         .invoke_resumable(
@@ -46,19 +61,36 @@ fn run_wasm() -> Result<()> {
 
     let mut res: Option<i32> = None;
     loop {
-        let current = Instant::now();
         match state {
             wasm::InvocationState::Finished(ret) => {
                 res.replace(ret);
                 break;
             }
             wasm::InvocationState::OutOfFuel(mut res) => {
-                let dt = (current - last).as_micros();
+                let current = Instant::now();
+                let dt = current - last;
 
-                println!("dt/df = {}/{}", dt, df);
+                let x = WasmMeasurement {
+                    timestamp_unix: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
+                    i,
+                    dt,
+                    df,
+                };
+
+                match sender.send_timeout(&x, Duration::from_millis(25)) {
+                    Err(_) => println!(
+                        "----------------------------------------------------ipc error----------------------------------------------------"
+                    ),
+                    Ok(false) => println!(
+                        "----------------------------------------------------ipc timeout--------------------------------------------------"
+                    ),
+                    Ok(true) => {}
+                };
+
                 res.set_fuel(Some(df));
-
+                i = i + 1;
                 last = Instant::now();
+
                 state = res.resume().unwrap();
             }
             wasm::InvocationState::Canceled => {

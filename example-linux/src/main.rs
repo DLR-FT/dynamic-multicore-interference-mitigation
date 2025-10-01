@@ -8,6 +8,7 @@ use std::{
 use anyhow::*;
 use clap::Parser;
 use hwloc::*;
+use ipmpsc::SharedRingBuffer;
 use itertools::Itertools;
 use log::*;
 use nix::sys::statfs::*;
@@ -16,6 +17,7 @@ use serde::*;
 use tokio::{process::*, time, *};
 use tokio_util::sync::*;
 use walkdir::WalkDir;
+use wasm_runner_serde::*;
 
 #[derive(Parser, Debug, Clone)]
 struct Args {
@@ -32,6 +34,7 @@ struct Config {
 struct ChildCmd {
     cmd: String,
     args: Vec<String>,
+    cpu_core: u32,
 }
 
 #[main(flavor = "current_thread")]
@@ -53,10 +56,15 @@ async fn main() -> Result<()> {
 
     let mut child = c.create_child("foo123")?;
 
+    let (buf_path, buf) = SharedRingBuffer::create_temp(4 * 1024)?;
+    let recv = ipmpsc::Receiver::new(buf);
+
     info!("Create main task");
     let mut main_task = Command::new(&config.main.cmd)
+        .arg("--buf")
+        .arg(buf_path)
         .args(&config.main.args)
-        .cpu_core(CpuSet::from_range(28, 28))
+        .cpu_core(CpuSet::from(config.main.cpu_core))
         .spawn()?;
 
     let spawn_task = |child_cmd: (&String, &ChildCmd)| {
@@ -64,7 +72,7 @@ async fn main() -> Result<()> {
         Command::new(&child_cmd.1.cmd)
             .args(&child_cmd.1.args)
             .cgroup(&mut child)
-            .cpu_core(CpuSet::from_range(30, 30))
+            .cpu_core(CpuSet::from(child_cmd.1.cpu_core))
             .spawn()
     };
 
@@ -76,33 +84,45 @@ async fn main() -> Result<()> {
 
     trace!("CGroup pids: {:?}", child.get_pids()?);
 
-    let token1 = cancellation.clone();
     let mut child1 = child.clone();
-    let task1 = tokio::spawn(async move {
-        loop {
-            select! {
-                _ =  time::sleep(Duration::from_millis(5000)) => {}
-                _ = token1.cancelled() => {
-                    break;
-                },
-            };
+    select! {
+        _ = signal::ctrl_c() => {
+            info!("Ctrl-C ....");
+        },
+         _ = tokio::spawn(async move {
+            loop {
+                time::sleep(Duration::from_millis(5000)).await;
 
-            let f = child1.is_frozen()?;
-            match f {
-                true => child1.unfreeze()?,
-                false => child1.freeze()?,
+                let f = child1.is_frozen()?;
+                match f {
+                    true => child1.unfreeze()?,
+                    false => child1.freeze()?,
+                }
             }
-        }
 
-        Ok(())
-    });
+            Ok(())
+        }) => {},
 
-    signal::ctrl_c().await?;
-    info!("Ctrl-C ....");
+        _ = tokio::spawn(async move {
+            loop {
+                for _ in 0..9 {
+                    let x: Option<WasmMeasurement> = recv.try_recv()?;
+                    match x {
+                        Some(m) => { info!("{:?}", m); continue },
+                        None => {break}
+                    }
+                }
+
+                time::sleep(Duration::from_millis(10)).await;
+            }
+
+            Ok(())
+        }) => {}
+    }
 
     trace!("Cancel");
     cancellation.cancel();
-    task1.await??;
+    // task1.await??;s
 
     trace!("Kill main task");
     main_task.kill().await?;

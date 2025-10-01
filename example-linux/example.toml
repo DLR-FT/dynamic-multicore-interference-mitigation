@@ -1,7 +1,11 @@
 [main]
-cmd = "sh"
-args = ["-c", "../target/debug/wasm-runner"]
+cmd = "../target/release/wasm-runner"
+args = []
+cpu_core = 12
+
+[cmds]
 
 [cmds.stress]
 cmd = "stress-ng"
 args = ["--class", "cpu-cache", "--all", "1"]
+cpu_core = 14
