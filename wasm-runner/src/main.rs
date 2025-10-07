@@ -1,6 +1,8 @@
 use std::{
-    alloc::System,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    fs,
+    ops::Range,
+    path::PathBuf,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Result;
@@ -10,27 +12,32 @@ use ipmpsc::{Sender, SharedRingBuffer};
 use wasm::*;
 use wasm_runner_serde::*;
 
-const WASM_BYTES: &[u8] = include_bytes!("../../2mm.wasm");
+// const WASM_BYTES: &[u8] = include_bytes!("../../2mm.wasm");
 
 #[derive(Parser, Debug, Clone)]
 struct Args {
     #[arg(long)]
-    buf: String,
+    wasm: PathBuf,
+
+    #[arg(long)]
+    out: PathBuf,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let buf = SharedRingBuffer::open(&args.buf)?;
+    let wasm_bytes = fs::read(args.wasm)?;
+
+    let buf = SharedRingBuffer::open(&args.out.to_str().unwrap())?;
     let sender = Sender::new(buf);
 
     loop {
-        run_wasm(&sender)?;
+        run_wasm(&wasm_bytes, args.fuel, &sender)?;
     }
 }
 
-fn run_wasm(sender: &Sender) -> Result<()> {
-    let validation_info = match validate(&WASM_BYTES) {
+fn run_wasm(wasm_bytes: &[u8], df: usize, sender: &Sender) -> Result<()> {
+    let validation_info = match validate(wasm_bytes) {
         Ok(table) => table,
         Err(_err) => {
             return Err(anyhow::anyhow!("wasm error"));
@@ -43,8 +50,6 @@ fn run_wasm(sender: &Sender) -> Result<()> {
             return Err(anyhow::anyhow!("wasm error"));
         }
     };
-
-    let df = 10 * 1000;
 
     instance.set_fuel(Some(df));
     let mut last = Instant::now();

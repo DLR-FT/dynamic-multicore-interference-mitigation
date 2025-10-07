@@ -90,8 +90,9 @@
             # pkgs.trace32-2024-02
             pkgs.stress-ng
             pkgs.hwloc
+            pkgs.youplot
 
-            (pkgs.python3.withPackages (python-pkgs: [
+            (pkgs.python3Full.withPackages (python-pkgs: [
             ]))
           ];
 

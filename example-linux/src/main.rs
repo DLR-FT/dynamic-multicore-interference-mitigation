@@ -54,6 +54,9 @@ async fn main() -> Result<()> {
     let config: Config = toml::from_str(&config)?;
     trace!("{:?}", config);
 
+    let out_file = File::create(args.out)?;
+    let mut out_writer = BufWriter::new(out_file);
+
     let proc = Process::myself()?;
     let mut c = CGroup::get_current(&proc)?;
 
@@ -63,9 +66,6 @@ async fn main() -> Result<()> {
 
     let (buf_path, buf) = SharedRingBuffer::create_temp(4 * 1024)?;
     let recv = ipmpsc::Receiver::new(buf);
-
-    let out_file = File::create_new(args.out)?;
-    let mut out_writer = BufWriter::new(out_file);
 
     info!("Create main task");
     let mut main_task = Command::new(&config.main.cmd)
@@ -98,20 +98,20 @@ async fn main() -> Result<()> {
         _ = signal::ctrl_c() => {
             info!("Ctrl-C ....");
         },
-         _ = tokio::spawn(async move {
-            loop {
-                time::sleep(Duration::from_millis(5000)).await;
-                child1.unfreeze()?;
+        //  _ = tokio::spawn(async move {
+        //     loop {
+        //         time::sleep(Duration::from_millis(5000)).await;
+        //         child1.unfreeze()?;
 
-                // let f = child1.is_frozen()?;
-                // match f {
-                //     true => child1.unfreeze()?,
-                //     false => child1.freeze()?,
-                // }
-            }
+        //         // let f = child1.is_frozen()?;
+        //         // match f {
+        //         //     true => child1.unfreeze()?,
+        //         //     false => child1.freeze()?,
+        //         // }
+        //     }
 
-            Ok(())
-        }) => {},
+        //     Ok(())
+        // }) => {},
 
         _ = tokio::spawn(async move {
             loop {
@@ -119,12 +119,6 @@ async fn main() -> Result<()> {
                     let x: Option<WasmMeasurement> = recv.try_recv()?;
                     match x {
                         Some(m) => {
-
-                            if m.dt > Duration::from_micros(1000) {
-                                child2.freeze()?;
-                            }
-
-                            // info!("{:?}", m);
                             out_writer.write_fmt(format_args!("{}, {}, {}, {}\n", m.timestamp_unix.as_nanos(), m.i, m.dt.as_nanos(), m.df))?;
                             continue
                         },
