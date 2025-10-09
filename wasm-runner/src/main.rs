@@ -1,8 +1,8 @@
 use std::{
     fs,
-    ops::Range,
     path::PathBuf,
     time::{Instant, SystemTime, UNIX_EPOCH},
+    usize,
 };
 
 use anyhow::Result;
@@ -12,15 +12,19 @@ use ipmpsc::{Sender, SharedRingBuffer};
 use wasm::*;
 use wasm_runner_serde::*;
 
-// const WASM_BYTES: &[u8] = include_bytes!("../../2mm.wasm");
-
 #[derive(Parser, Debug, Clone)]
 struct Args {
     #[arg(long)]
     wasm: PathBuf,
 
     #[arg(long)]
-    out: PathBuf,
+    fuel: Option<usize>,
+
+    #[arg(long)]
+    count: Option<usize>,
+
+    #[arg(long)]
+    buf: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -28,15 +32,20 @@ fn main() -> Result<()> {
 
     let wasm_bytes = fs::read(args.wasm)?;
 
-    let buf = SharedRingBuffer::open(&args.out.to_str().unwrap())?;
-    let sender = Sender::new(buf);
+    let sender = args
+        .buf
+        .map(|path| SharedRingBuffer::open(path.to_str().unwrap()))
+        .transpose()?
+        .map(Sender::new);
 
-    loop {
-        run_wasm(&wasm_bytes, args.fuel, &sender)?;
+    for i in 0..args.count.unwrap_or(usize::MAX) {
+        run_wasm(&wasm_bytes, &sender, args.fuel, i)?
     }
+
+    Ok(())
 }
 
-fn run_wasm(wasm_bytes: &[u8], df: usize, sender: &Sender) -> Result<()> {
+fn run_wasm(wasm_bytes: &[u8], sender: &Option<Sender>, df: Option<usize>, i: usize) -> Result<()> {
     let validation_info = match validate(wasm_bytes) {
         Ok(table) => table,
         Err(_err) => {
@@ -51,9 +60,9 @@ fn run_wasm(wasm_bytes: &[u8], df: usize, sender: &Sender) -> Result<()> {
         }
     };
 
-    instance.set_fuel(Some(df));
+    instance.set_fuel(df);
     let mut last = Instant::now();
-    let mut i = 0u32;
+    let mut j = 0;
 
     let mut state = instance
         .invoke_resumable(
@@ -68,21 +77,47 @@ fn run_wasm(wasm_bytes: &[u8], df: usize, sender: &Sender) -> Result<()> {
     loop {
         match state {
             wasm::InvocationState::Finished(ret) => {
+                let current = Instant::now();
+                let dt = current - last;
+                let df = instance.get_fuel().zip(df).map(|a| a.1 - a.0);
+
+                let x = WasmMeasurement {
+                    timestamp_unix: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
+                    i,
+                    j,
+                    dt,
+                    df,
+                };
+
+                match sender {
+                    Some(sender) => sender.send(&x)?,
+                    None => {
+                        println!("{:?}", x);
+                    }
+                }
+
                 res.replace(ret);
                 break;
             }
             wasm::InvocationState::OutOfFuel(mut res) => {
                 let current = Instant::now();
                 let dt = current - last;
+                let df = res.get_fuel().zip(df).map(|a| a.1 - a.0);
 
                 let x = WasmMeasurement {
                     timestamp_unix: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
                     i,
+                    j,
                     dt,
                     df,
                 };
 
-                sender.send(&x)?;
+                match sender {
+                    Some(sender) => sender.send(&x)?,
+                    None => {
+                        println!("{:?}", x);
+                    }
+                }
 
                 // match sender.send_timeout(&x, Duration::from_millis(25)) {
                 //     Err(_) => println!(
@@ -94,8 +129,8 @@ fn run_wasm(wasm_bytes: &[u8], df: usize, sender: &Sender) -> Result<()> {
                 //     Ok(true) => {}
                 // };
 
-                res.set_fuel(Some(df));
-                i = i + 1;
+                res.set_fuel(df);
+                j = j + 1;
                 last = Instant::now();
 
                 state = res.resume().unwrap();

@@ -1,11 +1,11 @@
 [main]
-cmd = "../target/release/wasm-runner"
-args = []
+cmd = "./target/release/wasm-runner"
+args = ["--wasm", "./2mm.wasm", "--count", "30", "--fuel", "100000000"]
 cpu_core = 12
 
-[cmds]
+[intruders]
 
-[cmds.stress]
+[intruders.stress]
 cmd = "stress-ng"
 args = ["--class", "cpu-cache", "--all", "1"]
 cpu_core = 14
