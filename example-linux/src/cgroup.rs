@@ -1,6 +1,6 @@
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -12,12 +12,13 @@ use nix::{
 };
 use procfs::process::Process;
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Ok, Result, bail, ensure};
 use walkdir::WalkDir;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct CGroup {
     pub(crate) path: PathBuf,
+    drop: bool,
 }
 
 impl CGroup {
@@ -38,10 +39,10 @@ impl CGroup {
         let path = mount.join(cgroup.pathname.strip_prefix('/').unwrap());
 
         trace!("Get CGroup: {:?}", path);
-        Ok(Self { path })
+        Ok(Self { path, drop: false })
     }
 
-    pub fn create_child(&mut self, name: &str) -> Result<Self> {
+    pub fn create_child(&mut self, name: &str, drop: bool) -> Result<Self> {
         ensure!(
             self.exists(),
             format!("CGroup does not exist: {:?}", self.path)
@@ -52,7 +53,21 @@ impl CGroup {
         trace!("Create child CGroup: {:?}", path);
         fs::create_dir(&path)?;
 
-        Ok(Self { path })
+        Ok(Self { path, drop })
+    }
+
+    pub fn import(path: impl AsRef<Path>, drop: bool) -> Result<Self> {
+        let cgroup = Self {
+            path: path.as_ref().to_owned(),
+            drop,
+        };
+
+        ensure!(
+            cgroup.exists(),
+            format!("CGroup does not exist: {:?}", cgroup.path)
+        );
+
+        Ok(cgroup)
     }
 
     pub fn exists(&self) -> bool {
@@ -231,5 +246,13 @@ impl CGroup {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for CGroup {
+    fn drop(&mut self) {
+        if self.drop && self.exists() {
+            self.remove().unwrap()
+        }
     }
 }

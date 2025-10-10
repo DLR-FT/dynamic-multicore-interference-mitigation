@@ -1,102 +1,99 @@
-use std::process::ExitStatus;
-
-use anyhow::{Result, anyhow};
-use futures::future::{join, join_all};
+use anyhow::{Ok, Result, anyhow};
+use futures::future::join_all;
 use hwloc::CpuSet;
 use log::trace;
 use procfs::process::Process;
-use tokio::process::{Child, Command};
+use tokio::{io, join, process::Command, select, spawn, sync::watch};
+use tokio_util::sync::CancellationToken;
 
 use crate::{cgroup::CGroup, command_ext::CommandExt};
 
 #[derive(Debug)]
 pub struct Runner {
-    cgroup: CGroup,
-    main: Option<Child>,
-    intruders: Vec<Child>,
+    main_cmd: Command,
+
+    intruder_cgroup: CGroup,
+    intruder_cmds: Vec<Command>,
 }
 
 impl Runner {
-    pub fn new() -> Result<Self> {
+    pub fn new(cmd: String, args: Vec<String>, cpu_core: u32) -> Result<Self> {
         let proc = Process::myself()?;
         let mut c = CGroup::get_current(&proc)?;
 
-        let cgroup = c.create_child("foo123")?;
+        let intruder_cgroup = c.create_child("foo123", true)?;
+
+        let mut cmd = Command::new(&cmd);
+        cmd.args(&args)
+            .cpu_core(CpuSet::from(cpu_core))?
+            .process_group(0)
+            .kill_on_drop(true);
 
         Ok(Self {
-            cgroup,
-            main: None,
-            intruders: vec![],
+            main_cmd: cmd,
+            intruder_cgroup,
+            intruder_cmds: vec![],
         })
     }
 
-    pub fn start_main(&mut self, cmd: String, args: Vec<String>, cpu_core: u32) -> Result<()> {
-        let main = Command::new(&cmd)
-            .args(&args)
-            .cpu_core(CpuSet::from(cpu_core))
-            .spawn()?;
+    pub fn add_intruder_cmd(
+        &mut self,
+        cmd: String,
+        args: Vec<String>,
+        cpu_core: u32,
+    ) -> Result<()> {
+        let mut cmd = Command::new(&cmd);
+        cmd.args(&args)
+            .cgroup(&mut self.intruder_cgroup)?
+            .cpu_core(CpuSet::from(cpu_core))?
+            .kill_on_drop(true);
 
-        self.main.replace(main);
-
-        Ok(())
-    }
-
-    pub fn start_intruder(&mut self, cmd: String, args: Vec<String>, cpu_core: u32) -> Result<()> {
-        let child = Command::new(&cmd)
-            .args(&args)
-            .cpu_core(CpuSet::from(cpu_core))
-            .cgroup(&mut self.cgroup)
-            .spawn()?;
-
-        self.intruders.push(child);
+        self.intruder_cmds.push(cmd);
 
         Ok(())
     }
 
-    pub async fn wait(&mut self) -> Result<ExitStatus> {
-        trace!("wait .......");
-        let Some(child) = self.main.as_mut() else {
-            return Err(anyhow!("no main task started"));
+    pub async fn run<F: Future, T>(
+        mut self,
+        cancel: CancellationToken,
+        extra: T,
+        f: impl Fn(watch::Sender<bool>, T) -> F,
+    ) -> Result<()> {
+        let mut main_task = self.main_cmd.spawn()?;
+        let mut intruder_tasks = self
+            .intruder_cmds
+            .into_iter()
+            .map(|mut cmd| cmd.spawn())
+            .collect::<io::Result<Vec<_>>>()?;
+
+        let mut intruders = self.intruder_cgroup;
+        let (tx, mut rx) = watch::channel(true);
+
+        select! {
+            _ = main_task.wait() => {
+                trace!("main task finished")
+             },
+            _ = f(tx, extra) => {},
+            _ = spawn(async move {
+                loop {
+                    if rx.changed().await.is_err() {break;}
+                    match *rx.borrow_and_update() {
+                        true => { trace!("received freeze interrupt"); intruders.freeze()? },
+                        false => {trace!("received unfreeze interrupt"); intruders.unfreeze()? }
+                    };
+                }
+
+                Ok(())
+            }) => {},
+            _ = cancel.cancelled() => { trace!("runner cancelled") },
         };
 
-        let res = child.wait().await;
-        self.main.take();
+        trace!("killing intruder tasks");
+        let kill_intruders = intruder_tasks.iter_mut().map(|child| child.kill());
 
-        join_all((&mut self.intruders).into_iter().map(|child| child.kill())).await;
+        trace!("killing main task");
+        join!(main_task.kill(), join_all(kill_intruders)).0?;
 
-        trace!(".............. wait done.");
-
-        res.map_err(|err| anyhow!(err))
-    }
-
-    pub async fn kill(&mut self) -> Result<()> {
-        let Some(child) = self.main.as_mut() else {
-            return Err(anyhow!("no main task started dsgghsdhs"));
-        };
-
-        let x = child.kill();
-        let y = join_all((&mut self.intruders).into_iter().map(|child| child.kill()));
-
-        let (x, _) = join(x, y).await;
-
-        self.main.take();
-
-        x.map_err(|err| anyhow!(err))
-    }
-}
-
-impl Drop for Runner {
-    fn drop(&mut self) {
-        trace!("-------------------- drop ---------------------");
-
-        if let Some(child) = self.main.as_mut() {
-            child.start_kill().unwrap();
-        }
-
-        for child in (&mut self.intruders).into_iter() {
-            child.start_kill().unwrap();
-        }
-
-        self.cgroup.remove().unwrap();
+        Ok(())
     }
 }
