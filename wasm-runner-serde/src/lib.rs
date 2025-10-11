@@ -5,8 +5,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Serialize, Debug)]
 pub struct WasmMeasurement {
     pub timestamp_unix: Duration,
+    pub fuel: Option<usize>,
     pub i: usize,
     pub j: usize,
+    pub k: usize,
     pub dt: Duration,
     pub df: Option<usize>,
 }

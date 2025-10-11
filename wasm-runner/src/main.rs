@@ -18,7 +18,7 @@ struct Args {
     wasm: PathBuf,
 
     #[arg(long)]
-    fuel: Option<usize>,
+    fuel: Vec<usize>,
 
     #[arg(long)]
     count: Option<usize>,
@@ -38,14 +38,29 @@ fn main() -> Result<()> {
         .transpose()?
         .map(Sender::new);
 
-    for i in 0..args.count.unwrap_or(usize::MAX) {
-        run_wasm(&wasm_bytes, &sender, args.fuel, i)?
+    let mut fuel: Vec<Option<usize>> = args.fuel.iter().map(|df| Some(*df)).collect();
+    if fuel.is_empty() {
+        fuel.push(None);
+    }
+
+    let mut i = 0;
+    for fuel in fuel.iter() {
+        for j in 0..args.count.unwrap_or(usize::MAX) {
+            run_wasm(&wasm_bytes, &sender, *fuel, i, j)?;
+            i = i + 1;
+        }
     }
 
     Ok(())
 }
 
-fn run_wasm(wasm_bytes: &[u8], sender: &Option<Sender>, df: Option<usize>, i: usize) -> Result<()> {
+fn run_wasm(
+    wasm_bytes: &[u8],
+    sender: &Option<Sender>,
+    fuel: Option<usize>,
+    i: usize,
+    j: usize,
+) -> Result<()> {
     let validation_info = match validate(wasm_bytes) {
         Ok(table) => table,
         Err(_err) => {
@@ -60,9 +75,9 @@ fn run_wasm(wasm_bytes: &[u8], sender: &Option<Sender>, df: Option<usize>, i: us
         }
     };
 
-    instance.set_fuel(df);
+    instance.set_fuel(fuel);
     let mut last = Instant::now();
-    let mut j = 0;
+    let mut k = 0;
 
     let mut state = instance
         .invoke_resumable(
@@ -79,12 +94,14 @@ fn run_wasm(wasm_bytes: &[u8], sender: &Option<Sender>, df: Option<usize>, i: us
             wasm::InvocationState::Finished(ret) => {
                 let current = Instant::now();
                 let dt = current - last;
-                let df = instance.get_fuel().zip(df).map(|a| a.1 - a.0);
+                let df = instance.get_fuel().zip(fuel).map(|a| a.1 - a.0);
 
                 let x = WasmMeasurement {
                     timestamp_unix: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
+                    fuel,
                     i,
                     j,
+                    k,
                     dt,
                     df,
                 };
@@ -102,12 +119,14 @@ fn run_wasm(wasm_bytes: &[u8], sender: &Option<Sender>, df: Option<usize>, i: us
             wasm::InvocationState::OutOfFuel(mut res) => {
                 let current = Instant::now();
                 let dt = current - last;
-                let df = res.get_fuel().zip(df).map(|a| a.1 - a.0);
+                let df = res.get_fuel().zip(fuel).map(|a| a.1 - a.0);
 
                 let x = WasmMeasurement {
                     timestamp_unix: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
+                    fuel,
                     i,
                     j,
+                    k,
                     dt,
                     df,
                 };
@@ -130,7 +149,7 @@ fn run_wasm(wasm_bytes: &[u8], sender: &Option<Sender>, df: Option<usize>, i: us
                 // };
 
                 res.set_fuel(df);
-                j = j + 1;
+                k = k + 1;
                 last = Instant::now();
 
                 state = res.resume().unwrap();

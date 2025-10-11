@@ -17,7 +17,6 @@ mod runner;
 
 use runner::*;
 use tokio_util::sync::CancellationToken;
-
 use wasm_runner_serde::WasmMeasurement;
 
 #[derive(Parser, Debug, Clone)]
@@ -98,13 +97,13 @@ async fn main() -> Result<()> {
 
 async fn mitigate(intr: watch::Sender<bool>, recv: Receiver) -> Result<()> {
     loop {
-        let x: Option<WasmMeasurement> = recv.try_recv()?;
-        let Some(x) = x else {
+        let meas: Option<WasmMeasurement> = recv.try_recv()?;
+        let Some(meas) = meas else {
             yield_now().await;
             continue;
         };
 
-        println!("{:?}", x);
+        println!("{}", serde_json::to_string(&meas)?);
     }
 
     #[allow(unreachable_code)]

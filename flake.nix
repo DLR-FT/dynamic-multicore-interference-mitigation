@@ -74,6 +74,7 @@
               targets = [
                 "armv7a-none-eabi"
                 "aarch64-unknown-none"
+                "wasm32-unknown-unknown"
               ];
             }
           );

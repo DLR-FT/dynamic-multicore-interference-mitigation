@@ -1,7 +1,13 @@
+#:schema foo
+
+cargo-features = ["per-package-target"]
+
 [package]
 name = "example"
 version = "0.1.0"
 edition = "2024"
+
+forced-target = "aarch64-unknown-none"
 
 [features]
 default = ["qemu"]

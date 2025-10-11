@@ -1,0 +1,18 @@
+#:schema foo
+
+cargo-features = ["per-package-target"]
+
+[package]
+name = "wasm-payloads"
+version = "0.1.0"
+edition = "2024"
+
+forced-target = "wasm32-unknown-unknown"
+
+[[bin]]
+name = "_2mm"
+
+[dependencies]
+# libm = "0.2.15"
+alloc_cat = { version = "1.0.0", default-features = false, features = [] }
+polybench-rs = { git = "https://github.com/moritz-meier/polybench-rs.git" }

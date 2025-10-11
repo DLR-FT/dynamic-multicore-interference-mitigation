@@ -1,4 +1,4 @@
-use anyhow::{Ok, Result, anyhow};
+use anyhow::{Ok, Result};
 use futures::future::join_all;
 use hwloc::CpuSet;
 use log::trace;
@@ -70,16 +70,14 @@ impl Runner {
         let (tx, mut rx) = watch::channel(true);
 
         select! {
-            _ = main_task.wait() => {
-                trace!("main task finished")
-             },
+            _ = main_task.wait() => {},
             _ = f(tx, extra) => {},
             _ = spawn(async move {
                 loop {
                     if rx.changed().await.is_err() {break;}
                     match *rx.borrow_and_update() {
                         true => { trace!("received freeze interrupt"); intruders.freeze()? },
-                        false => {trace!("received unfreeze interrupt"); intruders.unfreeze()? }
+                        false => { trace!("received unfreeze interrupt"); intruders.unfreeze()? }
                     };
                 }
 
