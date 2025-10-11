@@ -1,16 +1,14 @@
 [main]
-cmd = "./target/release/wasm-runner"
+cmd = "../target/release/wasm-runner"
 args = [
     "--wasm",
-    "./2mm.wasm",
+    "../target/wasm32-unknown-unknown/release/_2mm.wasm",
     "--fuel",
-    "10000",
+    "1000",
     "--fuel",
     "100000",
-    "--fuel",
-    "1000000",
     "--count",
-    "5",
+    "2",
 ]
 cpu_core = 12
 

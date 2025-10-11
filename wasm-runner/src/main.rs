@@ -45,7 +45,7 @@ fn main() -> Result<()> {
 
     let mut i = 0;
     for fuel in fuel.iter() {
-        for j in 0..args.count.unwrap_or(usize::MAX) {
+        for j in 0..args.count.unwrap_or(1) {
             run_wasm(&wasm_bytes, &sender, *fuel, i, j)?;
             i = i + 1;
         }

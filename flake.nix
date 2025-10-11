@@ -92,6 +92,8 @@
             pkgs.stress-ng
             pkgs.hwloc
             pkgs.youplot
+            pkgs.wasmtime
+            pkgs.wabt
 
             (pkgs.python3Full.withPackages (python-pkgs: [
             ]))

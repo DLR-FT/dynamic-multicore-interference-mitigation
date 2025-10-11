@@ -13,6 +13,5 @@ forced-target = "wasm32-unknown-unknown"
 name = "_2mm"
 
 [dependencies]
-# libm = "0.2.15"
 alloc_cat = { version = "1.0.0", default-features = false, features = [] }
-polybench-rs = { git = "https://github.com/moritz-meier/polybench-rs.git" }
+polybench-rs = { git = "https://github.com/moritz-meier/polybench-rs.git", branch = "wasm-no-std" }

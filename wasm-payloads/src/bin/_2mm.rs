@@ -8,5 +8,5 @@ pub static GLOBAL_ALLOCATOR: &AllocCat = &ALLOCATOR;
 use polybench_rs::linear_algebra::kernels::_2mm::bench;
 
 fn main() {
-    let _ = bench::<100, 100, 100, 100>();
+    let _ = bench::<64, 64, 64, 64>(); // 64 * 64 * 8 = 32KiB (*4) ~10M fuels
 }
