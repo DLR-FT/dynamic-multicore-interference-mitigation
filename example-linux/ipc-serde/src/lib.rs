@@ -6,6 +6,6 @@ pub enum Irq {
     Unfreeze(usize),
 }
 
-pub trait Ipc: Serialize + for<'a> Deserialize<'a> {
+pub trait Ipc: Copy + Serialize + for<'a> Deserialize<'a> + Send + Sync {
     fn irq(&self) -> Option<Irq>;
 }

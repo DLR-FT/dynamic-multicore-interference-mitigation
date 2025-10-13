@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use ipc_serde::{Ipc, Irq};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub struct WasmRunnerIpc {
     pub timestamp_unix: Duration,
     pub fuel: Option<usize>,

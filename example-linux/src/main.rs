@@ -1,10 +1,11 @@
-use std::{collections::*, fs, path::*};
+use std::fs;
+use std::{collections::*, io::*, path::*};
 
-use anyhow::*;
+use anyhow::{Ok, Result};
 use clap::Parser;
 use log::*;
 use serde::*;
-use tokio::*;
+use tokio::{sync::mpsc, *};
 
 mod cgroup;
 mod command_ext;
@@ -60,16 +61,46 @@ async fn main() -> Result<()> {
     let cancel = CancellationToken::new();
     let run_cancel = cancel.clone();
 
-    let run = runner.run::<WasmRunnerIpc>(config.primary, run_cancel);
+    let mut out_writer = args
+        .out
+        .map(|out_path| {
+            let file = fs::File::create(out_path)?;
+            Ok(BufWriter::new(file))
+        })
+        .transpose()?;
+
+    let (tx, mut rx) = mpsc::channel(4 * 1024);
+
+    let run = runner.run::<WasmRunnerIpc>(config.primary, tx, run_cancel);
+
+    let out_task = spawn(async move {
+        loop {
+            let Some(x) = rx.recv().await else {
+                break;
+            };
+
+            let x = serde_json::to_string(&x)?;
+
+            match &mut out_writer {
+                Some(writer) => writer.write_fmt(format_args!("{}\n", x))?,
+                None => println!("{}", x),
+            }
+        }
+
+        Ok(())
+    });
 
     pin!(run);
 
     select! {
+        _ = out_task => {
+            Ok(())
+        },
         res = &mut run =>{
             info!("finished.");
             res
         },
-        _=  signal::ctrl_c() => {
+        _ =  signal::ctrl_c() => {
             info!("ctrl-c");
             cancel.cancel();
             run.await

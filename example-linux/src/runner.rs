@@ -11,6 +11,7 @@ use tokio::{
     io,
     process::{Child, Command},
     select, spawn,
+    sync::{mpsc, watch},
     task::yield_now,
 };
 use tokio_util::sync::CancellationToken;
@@ -77,9 +78,10 @@ impl Runner {
         Ok(())
     }
 
-    pub async fn run<T: for<'de> Deserialize<'de> + Ipc + Send + Debug>(
+    pub async fn run<T: Ipc + 'static>(
         mut self,
         primary_id: (usize, usize),
+        tx: mpsc::Sender<T>,
         cancel: CancellationToken,
     ) -> Result<()> {
         let recv = Receiver::new(self.ipc_buf);
@@ -111,7 +113,7 @@ impl Runner {
                         None => {},
                     }
 
-                    println!("{:?}", x)
+                    tx.send(x).await?;
                 }
 
                 Ok(())
