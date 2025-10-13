@@ -1,96 +1,127 @@
-use anyhow::{Ok, Result};
+use std::{collections::HashMap, fmt::Debug, path::PathBuf};
+
+use anyhow::{Context, Ok, Result};
 use futures::future::join_all;
 use hwloc::CpuSet;
-use log::trace;
+use ipc_serde::{Ipc, Irq};
+use ipmpsc::{Receiver, SharedRingBuffer};
 use procfs::process::Process;
-use tokio::{io, join, process::Command, select, spawn, sync::watch};
+use serde::Deserialize;
+use tokio::{
+    io,
+    process::{Child, Command},
+    select, spawn,
+    task::yield_now,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{cgroup::CGroup, command_ext::CommandExt};
 
-#[derive(Debug)]
 pub struct Runner {
-    main_cmd: Command,
+    root_cgroup: CGroup,
 
-    intruder_cgroup: CGroup,
-    intruder_cmds: Vec<Command>,
+    cmds: HashMap<(usize, usize), Command>,
+    cgroups: HashMap<usize, CGroup>,
+
+    ipc_buf: SharedRingBuffer,
+    ipc_path: PathBuf,
 }
 
 impl Runner {
-    pub fn new(cmd: String, args: Vec<String>, cpu_core: u32) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let proc = Process::myself()?;
-        let mut c = CGroup::get_current(&proc)?;
+        let root_cgroup = CGroup::get_current(&proc)?;
 
-        let intruder_cgroup = c.create_child("foo123", true)?;
-
-        let mut cmd = Command::new(&cmd);
-        cmd.args(&args)
-            .cpu_core(CpuSet::from(cpu_core))?
-            .process_group(0)
-            .kill_on_drop(true);
+        let (ipc_path, ipc_buf) = SharedRingBuffer::create_temp(4 * 1024)?;
 
         Ok(Self {
-            main_cmd: cmd,
-            intruder_cgroup,
-            intruder_cmds: vec![],
+            root_cgroup,
+            cmds: HashMap::new(),
+            cgroups: HashMap::new(),
+            ipc_buf,
+            ipc_path: ipc_path.into(),
         })
     }
 
-    pub fn add_intruder_cmd(
+    pub fn add_process(
         &mut self,
+        id: (usize, usize),
         cmd: String,
         args: Vec<String>,
         cpu_core: u32,
+        ipc_arg: Option<String>,
     ) -> Result<()> {
+        let cgroup = if let Some(cgroup) = self.cgroups.get_mut(&id.0) {
+            cgroup
+        } else {
+            let cgroup = self
+                .root_cgroup
+                .create_child(&format!("runner{}", id.0), true)?;
+
+            self.cgroups.insert(id.0, cgroup);
+            self.cgroups.get_mut(&id.0).unwrap()
+        };
+
         let mut cmd = Command::new(&cmd);
-        cmd.args(&args)
-            .cgroup(&mut self.intruder_cgroup)?
+        cmd.args(args)
+            .cgroup(cgroup)?
             .cpu_core(CpuSet::from(cpu_core))?
             .kill_on_drop(true);
 
-        self.intruder_cmds.push(cmd);
+        if let Some(ipc_arg) = ipc_arg {
+            cmd.args([ipc_arg, self.ipc_path.to_str().unwrap().to_owned()]);
+        }
+
+        self.cmds.insert(id, cmd);
 
         Ok(())
     }
 
-    pub async fn run<F: Future, T>(
+    pub async fn run<T: for<'de> Deserialize<'de> + Ipc + Send + Debug>(
         mut self,
+        primary_id: (usize, usize),
         cancel: CancellationToken,
-        extra: T,
-        f: impl Fn(watch::Sender<bool>, T) -> F,
     ) -> Result<()> {
-        let mut main_task = self.main_cmd.spawn()?;
-        let mut intruder_tasks = self
-            .intruder_cmds
-            .into_iter()
-            .map(|mut cmd| cmd.spawn())
-            .collect::<io::Result<Vec<_>>>()?;
+        let recv = Receiver::new(self.ipc_buf);
 
-        let mut intruders = self.intruder_cgroup;
-        let (tx, mut rx) = watch::channel(true);
+        let mut tasks = self
+            .cmds
+            .iter_mut()
+            .map(|(id, cmd)| cmd.spawn().map(|x| (*id, x)))
+            .collect::<io::Result<HashMap<(usize, usize), Child>>>()?;
 
         select! {
-            _ = main_task.wait() => {},
-            _ = f(tx, extra) => {},
+            _ = cancel.cancelled() => {},
+            _ = tasks.get_mut(&primary_id).with_context(|| format!("id {:?} does not exist", primary_id))?.wait() => {},
             _ = spawn(async move {
                 loop {
-                    if rx.changed().await.is_err() {break;}
-                    match *rx.borrow_and_update() {
-                        true => { trace!("received freeze interrupt"); intruders.freeze()? },
-                        false => { trace!("received unfreeze interrupt"); intruders.unfreeze()? }
+                    let x: Option<T> = recv.try_recv()?;
+                    let Some(x) = x else {
+                        yield_now().await;
+                        continue
                     };
+
+                    match x.irq() {
+                        Some(Irq::Freeze(id)) => {
+                            self.cgroups.get_mut(&id).map(|cgroup| cgroup.freeze()).transpose()?;
+                        },
+                        Some(Irq::Unfreeze(id)) => {
+                            self.cgroups.get_mut(&id).map(|cgroup| cgroup.unfreeze()).transpose()?;
+                        },
+                        None => {},
+                    }
+
+                    println!("{:?}", x)
                 }
 
                 Ok(())
             }) => {},
-            _ = cancel.cancelled() => { trace!("runner cancelled") },
-        };
+        }
 
-        trace!("killing intruder tasks");
-        let kill_intruders = intruder_tasks.iter_mut().map(|child| child.kill());
-
-        trace!("killing main task");
-        join!(main_task.kill(), join_all(kill_intruders)).0?;
+        let _ = join_all(tasks.iter_mut().map(|(_, task)| task.kill()))
+            .await
+            .into_iter()
+            .collect::<io::Result<Vec<_>>>()?;
 
         Ok(())
     }

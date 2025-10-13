@@ -1,16 +1,11 @@
-use std::{
-    fs,
-    path::PathBuf,
-    time::{Instant, SystemTime, UNIX_EPOCH},
-    usize,
-};
+use std::{fs, path::*, time::*, usize};
 
 use anyhow::Result;
-
 use clap::Parser;
-use ipmpsc::{Sender, SharedRingBuffer};
+use ipmpsc::*;
 use wasm::*;
-use wasm_runner_serde::*;
+
+use wasm_runner::WasmRunnerIpc;
 
 #[derive(Parser, Debug, Clone)]
 struct Args {
@@ -24,7 +19,7 @@ struct Args {
     count: Option<usize>,
 
     #[arg(long)]
-    buf: Option<PathBuf>,
+    ipc: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -33,7 +28,7 @@ fn main() -> Result<()> {
     let wasm_bytes = fs::read(args.wasm)?;
 
     let sender = args
-        .buf
+        .ipc
         .map(|path| SharedRingBuffer::open(path.to_str().unwrap()))
         .transpose()?
         .map(Sender::new);
@@ -96,7 +91,7 @@ fn run_wasm(
                 let dt = current - last;
                 let df = instance.get_fuel().zip(fuel).map(|a| a.1 - a.0);
 
-                let x = WasmMeasurement {
+                let x = WasmRunnerIpc {
                     timestamp_unix: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
                     fuel,
                     i,
@@ -104,6 +99,8 @@ fn run_wasm(
                     k,
                     dt,
                     df,
+
+                    irq: Some(ipc_serde::Irq::Unfreeze(1)),
                 };
 
                 match sender {
@@ -121,7 +118,7 @@ fn run_wasm(
                 let dt = current - last;
                 let df = res.get_fuel().zip(fuel).map(|a| a.1 - a.0);
 
-                let x = WasmMeasurement {
+                let x = WasmRunnerIpc {
                     timestamp_unix: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
                     fuel,
                     i,
@@ -129,6 +126,8 @@ fn run_wasm(
                     k,
                     dt,
                     df,
+
+                    irq: Some(ipc_serde::Irq::Freeze(1)),
                 };
 
                 match sender {

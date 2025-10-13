@@ -1,20 +1,24 @@
-[main]
+primary = [0, 0]
+
+[processes]
+
+[processes.wasm]
+id = [0, 0]
 cmd = "../target/release/wasm-runner"
 args = [
     "--wasm",
     "../target/wasm32-unknown-unknown/release/_2mm.wasm",
     "--fuel",
     "1000",
-    "--fuel",
-    "100000",
     "--count",
-    "2",
+    "1",
 ]
 cpu_core = 12
+ipc_arg = "--ipc"
 
-[intruders]
 
-[intruders.stress]
+[processes.stress]
+id = [1, 0]
 cmd = "stress-ng"
-args = ["--class", "cpu-cache", "--all", "1"]
+args = ["--class cpu-cache"]
 cpu_core = 14

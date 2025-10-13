@@ -2,8 +2,10 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Debug)]
-pub struct WasmMeasurement {
+use ipc_serde::{Ipc, Irq};
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WasmRunnerIpc {
     pub timestamp_unix: Duration,
     pub fuel: Option<usize>,
     pub i: usize,
@@ -11,4 +13,12 @@ pub struct WasmMeasurement {
     pub k: usize,
     pub dt: Duration,
     pub df: Option<usize>,
+
+    pub irq: Option<Irq>,
+}
+
+impl Ipc for WasmRunnerIpc {
+    fn irq(&self) -> Option<Irq> {
+        self.irq
+    }
 }

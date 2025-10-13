@@ -2,7 +2,7 @@
 members = [
     # "example",
     "example-linux",
+    "example-linux/ipc-serde",
     "wasm-payloads",
     "wasm-runner",
-    "wasm-runner-serde",
 ]

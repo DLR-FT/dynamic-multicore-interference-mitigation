@@ -27,7 +27,9 @@ tokio = { version = "*", features = [
 tokio-util = "*"
 walkdir = "*"
 
-wasm-runner-serde = { path = "../wasm-runner-serde" }
+
+ipc-serde = { path = "./ipc-serde" }
+wasm-runner = { path = "../wasm-runner" }
 
 [dev-dependencies]
 rand = "*"
