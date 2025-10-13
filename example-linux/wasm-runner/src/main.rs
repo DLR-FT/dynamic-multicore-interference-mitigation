@@ -99,8 +99,7 @@ fn run_wasm(
                     k,
                     dt,
                     df,
-
-                    irq: Some(ipc_serde::Irq::Unfreeze(1)),
+                    irq: None,
                 };
 
                 match sender {
@@ -126,8 +125,7 @@ fn run_wasm(
                     k,
                     dt,
                     df,
-
-                    irq: Some(ipc_serde::Irq::Freeze(1)),
+                    irq: None,
                 };
 
                 match sender {
@@ -136,16 +134,6 @@ fn run_wasm(
                         println!("{:?}", x);
                     }
                 }
-
-                // match sender.send_timeout(&x, Duration::from_millis(25)) {
-                //     Err(_) => println!(
-                //         "----------------------------------------------------ipc error----------------------------------------------------"
-                //     ),
-                //     Ok(false) => println!(
-                //         "----------------------------------------------------ipc timeout--------------------------------------------------"
-                //     ),
-                //     Ok(true) => {}
-                // };
 
                 res.set_fuel(df);
                 k = k + 1;

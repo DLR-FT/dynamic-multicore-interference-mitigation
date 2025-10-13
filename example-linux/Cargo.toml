@@ -29,7 +29,7 @@ walkdir = "*"
 
 
 ipc-serde = { path = "./ipc-serde" }
-wasm-runner = { path = "../wasm-runner" }
+wasm-runner = { path = "./wasm-runner" }
 
 [dev-dependencies]
 rand = "*"

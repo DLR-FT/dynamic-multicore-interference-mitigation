@@ -9,5 +9,5 @@ clap = { version = "4.5.47", features = ["derive"] }
 ipmpsc = "*"
 serde = { version = "*", features = ["derive"] }
 
-ipc-serde = { path = "../example-linux/ipc-serde" }
+ipc-serde = { path = "../ipc-serde" }
 wasm-interpreter = { git = "https://github.com/moritz-meier/wasm-interpreter.git", branch = "feat/fuel" }

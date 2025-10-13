@@ -3,6 +3,6 @@ members = [
     # "example",
     "example-linux",
     "example-linux/ipc-serde",
+    "example-linux/wasm-runner",
     "wasm-payloads",
-    "wasm-runner",
 ]
