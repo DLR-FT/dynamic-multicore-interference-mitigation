@@ -1,18 +1,17 @@
-use std::time::Duration;
-
 use serde::{Deserialize, Serialize};
 
 use ipc_serde::{Ipc, Irq};
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub struct WasmRunnerIpc {
-    pub timestamp_unix: Duration,
-    pub fuel: Option<usize>,
+    pub timestamp_unix: u128,
+    pub fuel: usize,
     pub i: usize,
     pub j: usize,
     pub k: usize,
-    pub dt: Duration,
-    pub df: Option<usize>,
+    pub dt: u64,
+    pub df: usize,
+    pub ma_tpf: u64,
 
     pub irq: Option<Irq>,
 }

@@ -3,6 +3,7 @@ use std::{fs, path::*, time::*, usize};
 use anyhow::Result;
 use clap::Parser;
 use ipmpsc::*;
+use simple_moving_average::*;
 use wasm::*;
 
 use wasm_runner::WasmRunnerIpc;
@@ -33,9 +34,9 @@ fn main() -> Result<()> {
         .transpose()?
         .map(Sender::new);
 
-    let mut fuel: Vec<Option<usize>> = args.fuel.iter().map(|df| Some(*df)).collect();
+    let mut fuel: Vec<usize> = args.fuel;
     if fuel.is_empty() {
-        fuel.push(None);
+        fuel.push(1000);
     }
 
     let mut i = 0;
@@ -52,7 +53,7 @@ fn main() -> Result<()> {
 fn run_wasm(
     wasm_bytes: &[u8],
     sender: &Option<Sender>,
-    fuel: Option<usize>,
+    fuel: usize,
     i: usize,
     j: usize,
 ) -> Result<()> {
@@ -70,7 +71,7 @@ fn run_wasm(
         }
     };
 
-    instance.set_fuel(fuel);
+    instance.set_fuel(Some(fuel));
     let mut last = Instant::now();
     let mut k = 0;
 
@@ -83,22 +84,31 @@ fn run_wasm(
         )
         .unwrap();
 
+    let mut ma = SingleSumSMA::<u64, u64, 3>::new();
+
     let mut res: Option<i32> = None;
     loop {
         match state {
             wasm::InvocationState::Finished(ret) => {
                 let current = Instant::now();
-                let dt = current - last;
-                let df = instance.get_fuel().zip(fuel).map(|a| a.1 - a.0);
+                let dt = (current - last).as_nanos() as u64;
+                let df = fuel - instance.get_fuel().unwrap();
+
+                ma.add_sample(dt * 1000 / df as u64);
+                let ma_tpf = ma.get_average();
 
                 let x = WasmRunnerIpc {
-                    timestamp_unix: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
+                    timestamp_unix: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos(),
                     fuel,
                     i,
                     j,
                     k,
                     dt,
                     df,
+                    ma_tpf,
                     irq: None,
                 };
 
@@ -114,16 +124,23 @@ fn run_wasm(
             }
             wasm::InvocationState::OutOfFuel(mut res) => {
                 let current = Instant::now();
-                let dt = current - last;
-                let df = res.get_fuel().zip(fuel).map(|a| a.1 - a.0);
+                let dt = (current - last).as_nanos() as u64;
+                let df = fuel - res.get_fuel().unwrap();
+
+                ma.add_sample(dt * 1000 / df as u64);
+                let ma_tpf = ma.get_average();
 
                 let x = WasmRunnerIpc {
-                    timestamp_unix: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
+                    timestamp_unix: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos(),
                     fuel,
                     i,
                     j,
                     k,
                     dt,
+                    ma_tpf,
                     df,
                     irq: None,
                 };
@@ -135,7 +152,7 @@ fn run_wasm(
                     }
                 }
 
-                res.set_fuel(df);
+                res.set_fuel(Some(df));
                 k = k + 1;
                 last = Instant::now();
 

@@ -16,9 +16,8 @@ args = [
 cpu_core = 12
 ipc_arg = "--ipc"
 
-
-[processes.stress]
-id = [1, 0]
-cmd = "stress-ng"
-args = ["--class cpu-cache"]
-cpu_core = 14
+# [processes.stress]
+# args = ["--class", "cpu-cache", "--all", "1", "-t", "5m"]
+# id = [1, 0]
+# cmd = "stress-ng"
+# cpu_core = 13
