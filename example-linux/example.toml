@@ -10,14 +10,16 @@ args = [
     "../target/wasm32-unknown-unknown/release/_2mm.wasm",
     "--fuel",
     "1000",
+    "--fuel",
+    "100000",
     "--count",
-    "1",
+    "3",
 ]
-cpu_core = 12
+cpu_core = 6
 ipc_arg = "--ipc"
 
-# [processes.stress]
-# args = ["--class", "cpu-cache", "--all", "1", "-t", "5m"]
-# id = [1, 0]
-# cmd = "stress-ng"
-# cpu_core = 13
+[processes.stress]
+args = ["--class", "cpu-cache", "--all", "1", "-t", "5m"]
+id = [1, 0]
+cmd = "stress-ng"
+cpu_core = 7

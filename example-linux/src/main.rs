@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
 
     let run = runner.run::<WasmRunnerIpc>(config.primary, tx, run_cancel);
 
-    let out_task = spawn(async move {
+    let out = spawn(async move {
         loop {
             let Some(x) = rx.recv().await else {
                 break;
@@ -86,16 +86,12 @@ async fn main() -> Result<()> {
                 None => println!("{}", x),
             }
         }
-
         Ok(())
     });
 
     pin!(run);
 
-    select! {
-        _ = out_task => {
-            Ok(())
-        },
+    let res = select! {
         res = &mut run =>{
             info!("finished.");
             res
@@ -105,5 +101,9 @@ async fn main() -> Result<()> {
             cancel.cancel();
             run.await
         },
-    }
+    };
+
+    _ = out.await;
+
+    res
 }

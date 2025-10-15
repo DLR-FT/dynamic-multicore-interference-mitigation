@@ -6,9 +6,13 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import numpy as np
 import polars as pl
+import polars.selectors as cs
 import sys
 import tkinter
+import altair as alt
 
+alt.renderers.enable("browser")
+alt.data_transformers.enable("vegafusion")
 
 def parse_lines(lines):
     data = []
@@ -18,6 +22,20 @@ def parse_lines(lines):
 
     data = pl.from_dicts(data)
     return data
+
+def analyze_tpf(data):
+    data = data.with_columns(
+        tpf=(pl.col("dt") / pl.col("df"))
+    ).select(["fuel", "i", "j", "k", "tpf"])
+    
+    res = []
+    for i, data1 in data.group_by("i", maintain_order=True):
+        pivot = data1.pivot("j", index="k")
+        k = pivot.select(pl.col("k"))
+        avg_tpf = pivot.select(cs.starts_with("tpf_")).mean_horizontal()
+        res.append(pl.DataFrame({"k": k, "avg_tpf": avg_tpf}))
+
+    return res
 
 
 with open(sys.argv[1]) as f:
@@ -29,29 +47,10 @@ with open(sys.argv[2]) as f:
 dataA = parse_lines(linesA)
 dataB = parse_lines(linesB)
 
-print(dataA)
+tpfA = analyze_tpf(dataA)
+tpfB = analyze_tpf(dataB)
 
+chart0 = alt.Chart(tpfA[0]).mark_point().encode(x="k",y="avg_tpf").interactive().properties(width="container", height=750)
+chart1 = alt.Chart(tpfA[1]).mark_point().encode(x="k",y="avg_tpf").interactive().properties(width="container", height=750)
 
-fig, axs = plt.subplots(2, 2, sharex="col")
-
-foo = dataA.to_numpy()
-k = foo[:, 4]
-tpf = foo[:, 5]*1000/foo[:, 6]
-ma_tpf = foo[:, 7]
-axs[0, 0].set_title(sys.argv[1])
-axs[0, 0].plot(k, tpf)
-axs[0, 0].plot(k, ma_tpf)
-axs[0, 1].hist(tpf, bins=1000, density=True, log=True)
-
-
-foo = dataB.to_numpy()
-k = foo[:, 4]
-tpf = foo[:, 5]*1000/foo[:, 6]
-ma_tpf = foo[:, 7]
-axs[1, 0].set_title(sys.argv[2])
-axs[1, 0].plot(k, tpf)
-axs[1, 0].plot(k, ma_tpf)
-axs[1, 1].hist(tpf, bins=1000, density=True, log=True)
-
-
-plt.show()
+( chart1).show()

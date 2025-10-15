@@ -39,11 +39,9 @@ fn main() -> Result<()> {
         fuel.push(1000);
     }
 
-    let mut i = 0;
-    for fuel in fuel.iter() {
+    for (i, fuel) in fuel.iter().enumerate() {
         for j in 0..args.count.unwrap_or(1) {
             run_wasm(&wasm_bytes, &sender, *fuel, i, j)?;
-            i = i + 1;
         }
     }
 
@@ -84,7 +82,7 @@ fn run_wasm(
         )
         .unwrap();
 
-    let mut ma = SingleSumSMA::<u64, u64, 3>::new();
+    // let mut ma = SingleSumSMA::<u64, u64, 10>::new();
 
     let mut res: Option<i32> = None;
     loop {
@@ -94,8 +92,8 @@ fn run_wasm(
                 let dt = (current - last).as_nanos() as u64;
                 let df = fuel - instance.get_fuel().unwrap();
 
-                ma.add_sample(dt * 1000 / df as u64);
-                let ma_tpf = ma.get_average();
+                // ma.add_sample(dt * 1000 / df as u64);
+                // let ma_tpf = ma.get_average();
 
                 let x = WasmRunnerIpc {
                     timestamp_unix: SystemTime::now()
@@ -108,7 +106,7 @@ fn run_wasm(
                     k,
                     dt,
                     df,
-                    ma_tpf,
+                    // ma_tpf,
                     irq: None,
                 };
 
@@ -127,8 +125,8 @@ fn run_wasm(
                 let dt = (current - last).as_nanos() as u64;
                 let df = fuel - res.get_fuel().unwrap();
 
-                ma.add_sample(dt * 1000 / df as u64);
-                let ma_tpf = ma.get_average();
+                // ma.add_sample(dt * 1000 / df as u64);
+                // let ma_tpf = ma.get_average();
 
                 let x = WasmRunnerIpc {
                     timestamp_unix: SystemTime::now()
@@ -140,7 +138,7 @@ fn run_wasm(
                     j,
                     k,
                     dt,
-                    ma_tpf,
+                    // ma_tpf,
                     df,
                     irq: None,
                 };

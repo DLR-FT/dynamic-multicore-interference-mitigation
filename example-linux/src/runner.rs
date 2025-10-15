@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, path::PathBuf};
+use std::{collections::HashMap, fmt::Debug, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Ok, Result};
 use futures::future::join_all;
@@ -11,8 +11,9 @@ use tokio::{
     io,
     process::{Child, Command},
     select, spawn,
-    sync::{mpsc, watch},
+    sync::{mpsc, oneshot, watch},
     task::yield_now,
+    time::sleep,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -78,7 +79,7 @@ impl Runner {
         Ok(())
     }
 
-    pub async fn run<T: Ipc + 'static>(
+    pub async fn run<T: Ipc + Debug + 'static>(
         mut self,
         primary_id: (usize, usize),
         tx: mpsc::Sender<T>,
@@ -92,38 +93,55 @@ impl Runner {
             .map(|(id, cmd)| cmd.spawn().map(|x| (*id, x)))
             .collect::<io::Result<HashMap<(usize, usize), Child>>>()?;
 
+        let bar = CancellationToken::new();
+        let baz = bar.clone();
+        let foo = spawn(async move {
+            loop {
+                let x: Option<T> = recv.try_recv()?;
+                let Some(x) = x else {
+                    if baz.is_cancelled() {
+                        break;
+                    }
+
+                    yield_now().await;
+                    continue;
+                };
+
+                match x.irq() {
+                    Some(Irq::Freeze(id)) => {
+                        self.cgroups
+                            .get_mut(&id)
+                            .map(|cgroup| cgroup.freeze())
+                            .transpose()?;
+                    }
+                    Some(Irq::Unfreeze(id)) => {
+                        self.cgroups
+                            .get_mut(&id)
+                            .map(|cgroup| cgroup.unfreeze())
+                            .transpose()?;
+                    }
+                    None => {}
+                }
+
+                tx.send(x).await?;
+                // println!("{:?}", x)
+            }
+
+            Ok(())
+        });
+
         select! {
             _ = cancel.cancelled() => {},
             _ = tasks.get_mut(&primary_id).with_context(|| format!("id {:?} does not exist", primary_id))?.wait() => {},
-            _ = spawn(async move {
-                loop {
-                    let x: Option<T> = recv.try_recv()?;
-                    let Some(x) = x else {
-                        yield_now().await;
-                        continue
-                    };
-
-                    match x.irq() {
-                        Some(Irq::Freeze(id)) => {
-                            self.cgroups.get_mut(&id).map(|cgroup| cgroup.freeze()).transpose()?;
-                        },
-                        Some(Irq::Unfreeze(id)) => {
-                            self.cgroups.get_mut(&id).map(|cgroup| cgroup.unfreeze()).transpose()?;
-                        },
-                        None => {},
-                    }
-
-                    tx.send(x).await?;
-                }
-
-                Ok(())
-            }) => {},
         }
 
         let _ = join_all(tasks.iter_mut().map(|(_, task)| task.kill()))
             .await
             .into_iter()
             .collect::<io::Result<Vec<_>>>()?;
+
+        bar.cancel();
+        _ = foo.await;
 
         Ok(())
     }
