@@ -111,13 +111,25 @@ impl Runner {
                     Some(Irq::Freeze(id)) => {
                         self.cgroups
                             .get_mut(&id)
-                            .map(|cgroup| cgroup.freeze())
+                            .map(|cgroup| {
+                                if !cgroup.is_frozen()? {
+                                    cgroup.freeze()
+                                } else {
+                                    Ok(())
+                                }
+                            })
                             .transpose()?;
                     }
                     Some(Irq::Unfreeze(id)) => {
                         self.cgroups
                             .get_mut(&id)
-                            .map(|cgroup| cgroup.unfreeze())
+                            .map(|cgroup| {
+                                if cgroup.is_frozen()? {
+                                    cgroup.unfreeze()
+                                } else {
+                                    Ok(())
+                                }
+                            })
                             .transpose()?;
                     }
                     None => {}

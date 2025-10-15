@@ -2,8 +2,8 @@ use std::{fs, path::*, time::*, usize};
 
 use anyhow::Result;
 use clap::Parser;
+use ipc_serde::Irq;
 use ipmpsc::*;
-use simple_moving_average::*;
 use wasm::*;
 
 use wasm_runner::WasmRunnerIpc;
@@ -18,6 +18,9 @@ struct Args {
 
     #[arg(long)]
     count: Option<usize>,
+
+    #[arg(long)]
+    wc_tpf: Option<u64>,
 
     #[arg(long)]
     ipc: Option<PathBuf>,
@@ -41,7 +44,7 @@ fn main() -> Result<()> {
 
     for (i, fuel) in fuel.iter().enumerate() {
         for j in 0..args.count.unwrap_or(1) {
-            run_wasm(&wasm_bytes, &sender, *fuel, i, j)?;
+            run_wasm(&wasm_bytes, &sender, *fuel, i, j, args.wc_tpf)?;
         }
     }
 
@@ -54,6 +57,7 @@ fn run_wasm(
     fuel: usize,
     i: usize,
     j: usize,
+    wc_tpf: Option<u64>,
 ) -> Result<()> {
     let validation_info = match validate(wasm_bytes) {
         Ok(table) => table,
@@ -72,6 +76,10 @@ fn run_wasm(
     instance.set_fuel(Some(fuel));
     let mut last = Instant::now();
     let mut k = 0;
+
+    let mut total_time = 0u64;
+    let mut total_fuel = 0usize;
+    let mut last_irq = None;
 
     let mut state = instance
         .invoke_resumable(
@@ -92,6 +100,9 @@ fn run_wasm(
                 let dt = (current - last).as_nanos() as u64;
                 let df = fuel - instance.get_fuel().unwrap();
 
+                total_time = total_time + dt;
+                total_fuel = total_fuel + df;
+
                 // ma.add_sample(dt * 1000 / df as u64);
                 // let ma_tpf = ma.get_average();
 
@@ -106,7 +117,7 @@ fn run_wasm(
                     k,
                     dt,
                     df,
-                    // ma_tpf,
+                    avg_tpf: total_time * 1000 / total_fuel as u64,
                     irq: None,
                 };
 
@@ -125,6 +136,23 @@ fn run_wasm(
                 let dt = (current - last).as_nanos() as u64;
                 let df = fuel - res.get_fuel().unwrap();
 
+                total_time = total_time + dt;
+                total_fuel = total_fuel + df;
+
+                let avg_tpf = total_time * 1000 / total_fuel as u64;
+
+                let irq = wc_tpf.and_then(|wc| {
+                    if avg_tpf > wc {
+                        Some(Irq::Freeze(1))
+                    } else if avg_tpf < (wc - 100) {
+                        Some(Irq::Unfreeze(1))
+                    } else {
+                        last_irq
+                    }
+                });
+
+                last_irq = irq;
+
                 // ma.add_sample(dt * 1000 / df as u64);
                 // let ma_tpf = ma.get_average();
 
@@ -138,9 +166,9 @@ fn run_wasm(
                     j,
                     k,
                     dt,
-                    // ma_tpf,
+                    avg_tpf,
                     df,
-                    irq: None,
+                    irq,
                 };
 
                 match sender {

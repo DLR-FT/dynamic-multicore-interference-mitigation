@@ -9,17 +9,17 @@ args = [
     "--wasm",
     "../target/wasm32-unknown-unknown/release/_2mm.wasm",
     "--fuel",
-    "1000",
-    "--fuel",
-    "100000",
+    "10000",
     "--count",
-    "3",
+    "100",
+    "--wc-tpf",
+    "1",
 ]
 cpu_core = 6
 ipc_arg = "--ipc"
 
 [processes.stress]
-args = ["--class", "cpu-cache", "--all", "1", "-t", "5m"]
+args = ["--class", "cpu-cache", "--seq", "1", "-t", "5m"]
 id = [1, 0]
 cmd = "stress-ng"
 cpu_core = 7

@@ -11,7 +11,7 @@ pub struct WasmRunnerIpc {
     pub k: usize,
     pub dt: u64,
     pub df: usize,
-    // pub ma_tpf: u64,
+    pub avg_tpf: u64,
     pub irq: Option<Irq>,
 }
 
