@@ -4,22 +4,28 @@ primary = [0, 0]
 
 [processes.wasm]
 id = [0, 0]
-cmd = "../target/release/wasm-runner"
+cmd = "./target/release/wasm-runner"
 args = [
     "--wasm",
-    "../target/wasm32-unknown-unknown/release/_2mm.wasm",
+    "./target/wasm32-unknown-unknown/release/_2mm.wasm",
     "--fuel",
     "10000",
     "--count",
     "100",
-    "--wc-tpf",
-    "1",
+    "--wctpf",
+    "1000000000",
+    "--wctpf",
+    "25000",
+    "--wctpf",
+    "0",
 ]
 cpu_core = 6
 ipc_arg = "--ipc"
 
 [processes.stress]
-args = ["--class", "cpu-cache", "--seq", "1", "-t", "5m"]
+args = ["--class", "cpu-cache", "--all", "1", "-t", "60m"]
 id = [1, 0]
 cmd = "stress-ng"
 cpu_core = 7
+
+# kernel cmdline:  nohz_full=6-7,22-23 isolcpus=domain,managed_irq,6-7,22-23 irqaffinity=0-5,8-21,24-31

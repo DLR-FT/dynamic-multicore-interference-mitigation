@@ -19,7 +19,7 @@ def parse_lines(lines):
     data = pl.from_dicts(data)
     return data
 
-def avg_e2e_tpf(data):
+def avg_tpf(data):
     res = []
     for i, data1 in data.group_by("i", maintain_order=True):
         x = data1.group_by("j", maintain_order=True).tail(1).select("j", "avg_tpf")
@@ -49,8 +49,8 @@ with open(sys.argv[2]) as f:
 dataA = parse_lines(linesA)
 dataB = parse_lines(linesB)
 
-avg_tpfA = avg_e2e_tpf(dataA)
-avg_tpfB = avg_e2e_tpf(dataB)
+avg_tpfA = avg_tpf(dataA)
+avg_tpfB = avg_tpf(dataB)
 
 tpfA = tpf(dataA)
 tpfB = tpf(dataB)

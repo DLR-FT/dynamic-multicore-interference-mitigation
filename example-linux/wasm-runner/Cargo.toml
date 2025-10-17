@@ -12,5 +12,3 @@ serde_nanos = "*"
 
 ipc-serde = { path = "../ipc-serde" }
 wasm-interpreter = { git = "https://github.com/moritz-meier/wasm-interpreter.git", branch = "feat/fuel" }
-
-simple_moving_average = "*"

@@ -1,6 +1,6 @@
-use std::{fs, path::*, time::*, usize};
+use std::{fs, path::*, thread::sleep, time::*, usize};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::Parser;
 use ipc_serde::Irq;
 use ipmpsc::*;
@@ -17,10 +17,10 @@ struct Args {
     fuel: Vec<usize>,
 
     #[arg(long)]
-    count: Option<usize>,
+    wctpf: Vec<u64>,
 
     #[arg(long)]
-    wc_tpf: Option<u64>,
+    count: Option<usize>,
 
     #[arg(long)]
     ipc: Option<PathBuf>,
@@ -37,27 +37,33 @@ fn main() -> Result<()> {
         .transpose()?
         .map(Sender::new);
 
-    let mut fuel: Vec<usize> = args.fuel;
+    let mut fuel: Vec<Option<usize>> = args.fuel.into_iter().map(Some).collect();
     if fuel.is_empty() {
-        fuel.push(1000);
+        fuel.push(None);
+    }
+
+    let mut wctpf: Vec<Option<u64>> = args.wctpf.into_iter().map(Some).collect();
+    if wctpf.is_empty() {
+        wctpf.push(None);
     }
 
     for (i, fuel) in fuel.iter().enumerate() {
-        for j in 0..args.count.unwrap_or(1) {
-            run_wasm(&wasm_bytes, &sender, *fuel, i, j, args.wc_tpf)?;
+        for (j, wctpf) in wctpf.iter().enumerate() {
+            for k in 0..args.count.unwrap_or(1) {
+                let log = WasmRunLogger::new(sender.as_ref(), *fuel, *wctpf, i, j, k);
+                run_wasm(&wasm_bytes, *fuel, *wctpf, log)?;
+            }
         }
     }
 
     Ok(())
 }
 
-fn run_wasm(
+fn run_wasm<'sender>(
     wasm_bytes: &[u8],
-    sender: &Option<Sender>,
-    fuel: usize,
-    i: usize,
-    j: usize,
-    wc_tpf: Option<u64>,
+    fuel: Option<usize>,
+    wctpf: Option<u64>,
+    logger: WasmRunLogger<'sender>,
 ) -> Result<()> {
     let validation_info = match validate(wasm_bytes) {
         Ok(table) => table,
@@ -73,14 +79,35 @@ fn run_wasm(
         }
     };
 
-    instance.set_fuel(Some(fuel));
+    let mitigator = Mitigator::new(wctpf, wctpf.map(|x| x / 10).unwrap_or(0));
+
+    let mut fuel_cycle = 0;
+    let mut acc_t = Duration::ZERO;
+    let mut acc_f = Some(0);
+
+    logger.log(
+        Instant::now(),
+        fuel_cycle,
+        Duration::ZERO,
+        Some(0),
+        acc_t,
+        acc_f,
+        wctpf
+            .map(|wctpf| {
+                if wctpf == 0 {
+                    Irq::Freeze(1)
+                } else {
+                    Irq::Unfreeze(1)
+                }
+            })
+            .or(Some(Irq::Unfreeze(1))),
+    )?;
+
+    sleep(Duration::from_millis(100));
+
+    fuel_cycle = fuel_cycle + 1;
+    instance.set_fuel(fuel);
     let mut last = Instant::now();
-    let mut k = 0;
-
-    let mut total_time = 0u64;
-    let mut total_fuel = 0usize;
-    let mut last_irq = None;
-
     let mut state = instance
         .invoke_resumable(
             &instance
@@ -90,99 +117,38 @@ fn run_wasm(
         )
         .unwrap();
 
-    // let mut ma = SingleSumSMA::<u64, u64, 10>::new();
-
-    let mut res: Option<i32> = None;
     loop {
+        let current = Instant::now();
+        let dt = current - last;
+
         match state {
             wasm::InvocationState::Finished(ret) => {
-                let current = Instant::now();
-                let dt = (current - last).as_nanos() as u64;
-                let df = fuel - instance.get_fuel().unwrap();
+                let df = fuel.zip(instance.get_fuel()).map(|(a, b)| a - b);
 
-                total_time = total_time + dt;
-                total_fuel = total_fuel + df;
+                acc_t = acc_t + dt;
+                acc_f = acc_f.zip(df).map(|(a, b)| a + b);
 
-                // ma.add_sample(dt * 1000 / df as u64);
-                // let ma_tpf = ma.get_average();
+                let irq = mitigator.mitigate(acc_t, acc_f);
 
-                let x = WasmRunnerIpc {
-                    timestamp_unix: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_nanos(),
-                    fuel,
-                    i,
-                    j,
-                    k,
-                    dt,
-                    df,
-                    avg_tpf: total_time * 1000 / total_fuel as u64,
-                    irq: None,
-                };
+                logger.log(current, fuel_cycle, dt, df, acc_t, acc_f, irq)?;
 
-                match sender {
-                    Some(sender) => sender.send(&x)?,
-                    None => {
-                        println!("{:?}", x);
-                    }
-                }
-
-                res.replace(ret);
+                let _: i32 = ret;
                 break;
             }
             wasm::InvocationState::OutOfFuel(mut res) => {
-                let current = Instant::now();
-                let dt = (current - last).as_nanos() as u64;
-                let df = fuel - res.get_fuel().unwrap();
+                let df = fuel.zip(res.get_fuel()).map(|(a, b)| a - b);
 
-                total_time = total_time + dt;
-                total_fuel = total_fuel + df;
+                acc_t = acc_t + dt;
+                acc_f = acc_f.zip(df).map(|(a, b)| a + b);
 
-                let avg_tpf = total_time * 1000 / total_fuel as u64;
+                let irq = mitigator.mitigate(acc_t, acc_f);
 
-                let irq = wc_tpf.and_then(|wc| {
-                    if avg_tpf > wc {
-                        Some(Irq::Freeze(1))
-                    } else if avg_tpf < (wc - 100) {
-                        Some(Irq::Unfreeze(1))
-                    } else {
-                        last_irq
-                    }
-                });
+                logger.log(current, fuel_cycle, dt, df, acc_t, acc_f, irq)?;
 
-                last_irq = irq;
-
-                // ma.add_sample(dt * 1000 / df as u64);
-                // let ma_tpf = ma.get_average();
-
-                let x = WasmRunnerIpc {
-                    timestamp_unix: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_nanos(),
-                    fuel,
-                    i,
-                    j,
-                    k,
-                    dt,
-                    avg_tpf,
-                    df,
-                    irq,
-                };
-
-                match sender {
-                    Some(sender) => sender.send(&x)?,
-                    None => {
-                        println!("{:?}", x);
-                    }
-                }
-
-                res.set_fuel(Some(df));
-                k = k + 1;
+                fuel_cycle = fuel_cycle + 1;
+                res.set_fuel(fuel);
                 last = Instant::now();
-
-                state = res.resume().unwrap();
+                state = res.resume().map_err(|err| anyhow!(err))?;
             }
             wasm::InvocationState::Canceled => {
                 break;
@@ -191,4 +157,104 @@ fn run_wasm(
     }
 
     return Ok(());
+}
+
+struct Mitigator {
+    wctpf: Option<u64>,
+    wctpf_hyst: u64,
+    last_irq: Option<Irq>,
+}
+
+impl Mitigator {
+    fn new(wctpf: Option<u64>, wctpf_hyst: u64) -> Self {
+        Self {
+            wctpf,
+            wctpf_hyst,
+            last_irq: Some(Irq::Unfreeze(1)),
+        }
+    }
+
+    fn mitigate(&self, acc_t: Duration, acc_f: Option<usize>) -> Option<Irq> {
+        let avgtpf = acc_f.map(|acc_f| (acc_t.as_nanos() * 1000) as u64 / acc_f as u64);
+
+        self.wctpf
+            .zip(avgtpf)
+            .map(|(wctpf, avgtpf)| {
+                if avgtpf > wctpf {
+                    Some(Irq::Freeze(1))
+                } else if avgtpf < (wctpf - self.wctpf_hyst) {
+                    Some(Irq::Unfreeze(1))
+                } else {
+                    self.last_irq
+                }
+            })
+            .flatten()
+    }
+}
+
+#[derive(Clone, Copy)]
+struct WasmRunLogger<'sender> {
+    sender: Option<&'sender Sender>,
+    timestamp_epoch: Instant,
+    fuel: Option<usize>,
+    wctpf: Option<u64>,
+    fuel_index: usize,
+    wctpf_index: usize,
+    run_index: usize,
+}
+
+impl<'sender> WasmRunLogger<'sender> {
+    fn new(
+        sender: Option<&'sender Sender>,
+        fuel: Option<usize>,
+        wctpf: Option<u64>,
+        fuel_index: usize,
+        wctpf_index: usize,
+        run_index: usize,
+    ) -> Self {
+        Self {
+            sender,
+            timestamp_epoch: Instant::now(),
+            fuel,
+            wctpf,
+            fuel_index,
+            wctpf_index,
+            run_index,
+        }
+    }
+
+    fn log(
+        self,
+        timestamp: Instant,
+        fuel_cycle: usize,
+        dt: Duration,
+        df: Option<usize>,
+        acc_t: Duration,
+        acc_f: Option<usize>,
+        irq: Option<Irq>,
+    ) -> Result<()> {
+        let timestamp = timestamp - self.timestamp_epoch;
+        let log = WasmRunnerIpc {
+            timestamp,
+            fuel: self.fuel,
+            wctpf: self.wctpf,
+            i: self.fuel_index,
+            j: self.wctpf_index,
+            k: self.run_index,
+            l: fuel_cycle,
+            dt,
+            df,
+            acc_t,
+            acc_f,
+            irq,
+        };
+
+        if let Some(sender) = self.sender {
+            sender.send(&log)?;
+        } else {
+            println!("{:?}", log);
+        }
+
+        Ok(())
+    }
 }

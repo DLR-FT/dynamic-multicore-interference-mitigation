@@ -6,7 +6,6 @@ use hwloc::CpuSet;
 use ipc_serde::{Ipc, Irq};
 use ipmpsc::{Receiver, SharedRingBuffer};
 use procfs::process::Process;
-use serde::Deserialize;
 use tokio::{
     io,
     process::{Child, Command},
@@ -111,32 +110,19 @@ impl Runner {
                     Some(Irq::Freeze(id)) => {
                         self.cgroups
                             .get_mut(&id)
-                            .map(|cgroup| {
-                                if !cgroup.is_frozen()? {
-                                    cgroup.freeze()
-                                } else {
-                                    Ok(())
-                                }
-                            })
+                            .map(|cgroup| cgroup.freeze())
                             .transpose()?;
                     }
                     Some(Irq::Unfreeze(id)) => {
                         self.cgroups
                             .get_mut(&id)
-                            .map(|cgroup| {
-                                if cgroup.is_frozen()? {
-                                    cgroup.unfreeze()
-                                } else {
-                                    Ok(())
-                                }
-                            })
+                            .map(|cgroup| cgroup.unfreeze())
                             .transpose()?;
                     }
                     None => {}
                 }
 
                 tx.send(x).await?;
-                // println!("{:?}", x)
             }
 
             Ok(())
