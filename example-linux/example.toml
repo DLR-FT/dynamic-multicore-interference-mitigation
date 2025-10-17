@@ -28,4 +28,6 @@ id = [1, 0]
 cmd = "stress-ng"
 cpu_core = 7
 
-# kernel cmdline:  nohz_full=6-7,22-23 isolcpus=domain,managed_irq,6-7,22-23 irqaffinity=0-5,8-21,24-31
+# kernel cmdline:
+# 5950x:        nohz_full=6-7,22-23 isolcpus=domain,managed_irq,6-7,22-23 irqaffinity=0-5,8-21,24-31
+# i9-14900K:    nohz_full=12-15 isolcpus=domain,managed_irq,12-15 irqaffinity=0-11,16-31
