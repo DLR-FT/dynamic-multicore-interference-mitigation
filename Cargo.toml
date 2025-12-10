@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    # "example",
+    "example",
     "example-linux",
     "example-linux/ipc-serde",
     "example-linux/wasm-runner",

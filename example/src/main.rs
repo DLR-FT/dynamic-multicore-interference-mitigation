@@ -6,6 +6,8 @@ use core::fmt::Write as FmtWrite;
 use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 
+use arbitrary_int::*;
+
 use arm64::cache::*;
 use arm64::critical_section::*;
 use arm64::mmu::*;
@@ -54,6 +56,9 @@ const NORMAL_ATTRS: BlockAttrs = BlockAttrs::DEFAULT
 
 #[entry(exceptions = Excps)]
 unsafe fn main(info: EntryInfo) -> ! {
+    arm64::sys_regs::CPUACTLR_EL1
+        .modify(|x| x.with_L1RADIS(u2::new(0b11)).with_RADIS(u2::new(0b11)));
+
     critical_section::with(|cs| {
         let mut l0 = L0TABLE.borrow_ref_mut(cs);
         let mut l1 = L1TABLE.borrow_ref_mut(cs);
@@ -109,12 +114,12 @@ unsafe fn main(info: EntryInfo) -> ! {
         ))
         .unwrap();
 
-    // Psci::cpu_on_64::<Smccc<SMC>>(
-    //     1,
-    //     (start::<intruder::IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
-    //     0,
-    // )
-    // .unwrap();
+    Psci::cpu_on_64::<Smccc<SMC>>(
+        1,
+        (start::<intruder::IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
+        0,
+    )
+    .unwrap();
 
     // Psci::cpu_on_64::<Smccc<SMC>>(
     //     2,
@@ -138,7 +143,8 @@ unsafe fn main(info: EntryInfo) -> ! {
 
         UartWriter.write_str("running wasm ...\n").unwrap();
 
-        const WASM_BYTES: &[u8] = include_bytes!("../2mm.wasm");
+        const WASM_BYTES: &[u8] =
+            include_bytes!("../../target/wasm32-unknown-unknown/release/_2mm.wasm");
         run_wasm(WASM_BYTES).unwrap();
 
         UartWriter.write_str("done.\n").unwrap();
