@@ -103,8 +103,6 @@ fn run_wasm<'sender>(
             .or(Some(Irq::Unfreeze(1))),
     )?;
 
-    sleep(Duration::from_millis(100));
-
     fuel_cycle = fuel_cycle + 1;
     instance.set_fuel(fuel);
     let mut last = Instant::now();

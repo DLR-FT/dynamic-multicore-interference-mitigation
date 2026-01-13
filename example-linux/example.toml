@@ -4,10 +4,10 @@ primary = [0, 0]
 
 [processes.wasm]
 id = [0, 0]
-cmd = "./target/release/wasm-runner"
+cmd = "../target/release/wasm-runner"
 args = [
     "--wasm",
-    "./target/wasm32-unknown-unknown/release/_2mm.wasm",
+    "../target/wasm32-unknown-unknown/release/_2mm.wasm",
     "--fuel",
     "10000",
     "--count",
