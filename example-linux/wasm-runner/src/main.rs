@@ -74,7 +74,7 @@ fn run_wasm<'sender>(
         _values: Vec<Value>,
     ) -> Result<Vec<Value>, HaltExecutionError> {
         println!("Wasm binary panic!");
-        Ok(Vec::new())
+        Err(HaltExecutionError)
     }
 
     let wasm_panic = store.func_alloc_typed::<(), ()>(wasm_panic_handler);
