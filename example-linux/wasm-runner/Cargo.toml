@@ -4,11 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "*"
-clap = { version = "4.5.47", features = ["derive"] }
-ipmpsc = "*"
-serde = { version = "*", features = ["derive"] }
-serde_nanos = "*"
+anyhow = { workspace = true }
+clap = { workspace = true }
+ipmpsc = { workspace = true }
+serde = { workspace = true }
+
+
+serde_nanos = "0.1.4"
 
 ipc-serde = { path = "../ipc-serde" }
-wasm-interpreter = { git = "https://github.com/moritz-meier/wasm-interpreter.git", branch = "feat/fuel" }
+wasm-interpreter = { git = "https://github.com/dlr-ft/wasm-interpreter.git", tag = "v0.1.0" }

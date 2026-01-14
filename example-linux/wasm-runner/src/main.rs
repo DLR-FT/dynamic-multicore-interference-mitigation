@@ -1,4 +1,4 @@
-use std::{fs, path::*, thread::sleep, time::*, usize};
+use std::{fs, path::*, time::*, usize};
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
@@ -14,7 +14,7 @@ struct Args {
     wasm: PathBuf,
 
     #[arg(long)]
-    fuel: Vec<usize>,
+    fuel: Vec<u32>,
 
     #[arg(long)]
     wctpf: Vec<u64>,
@@ -37,7 +37,7 @@ fn main() -> Result<()> {
         .transpose()?
         .map(Sender::new);
 
-    let mut fuel: Vec<Option<usize>> = args.fuel.into_iter().map(Some).collect();
+    let mut fuel: Vec<Option<u32>> = args.fuel.into_iter().map(Some).collect();
     if fuel.is_empty() {
         fuel.push(None);
     }
@@ -61,23 +61,41 @@ fn main() -> Result<()> {
 
 fn run_wasm<'sender>(
     wasm_bytes: &[u8],
-    fuel: Option<usize>,
+    fuel: Option<u32>,
     wctpf: Option<u64>,
     logger: WasmRunLogger<'sender>,
 ) -> Result<()> {
-    let validation_info = match validate(wasm_bytes) {
-        Ok(table) => table,
-        Err(_err) => {
-            return Err(anyhow::anyhow!("wasm error"));
-        }
-    };
+    let validation_info = validate(wasm_bytes).map_err(|e| anyhow!(e))?;
 
-    let mut instance = match RuntimeInstance::new(&validation_info) {
-        Ok(instance) => instance,
-        Err(_err) => {
-            return Err(anyhow::anyhow!("wasm error"));
-        }
-    };
+    let mut store = Store::new(());
+
+    fn wasm_panic_handler(
+        _: &mut (),
+        _values: Vec<Value>,
+    ) -> Result<Vec<Value>, HaltExecutionError> {
+        println!("Wasm binary panic!");
+        Ok(Vec::new())
+    }
+
+    let wasm_panic = store.func_alloc_typed::<(), ()>(wasm_panic_handler);
+
+    let module = store
+        .module_instantiate(&validation_info, vec![ExternVal::Func(wasm_panic)], fuel)
+        .map_err(|e| anyhow!(e))?
+        .module_addr;
+
+    let wasm_main = store
+        .instance_export(module, "main")
+        .map_err(|e| anyhow!(e))?
+        .as_func()
+        .ok_or(anyhow!(
+            "Wasm module \"{}\" does not export func \"main\"",
+            module
+        ))?;
+
+    let resumable_ref = store
+        .create_resumable(wasm_main, vec![], fuel)
+        .map_err(|e| anyhow!(e))?;
 
     let mitigator = Mitigator::new(wctpf, wctpf.map(|x| x / 10).unwrap_or(0));
 
@@ -104,24 +122,22 @@ fn run_wasm<'sender>(
     )?;
 
     fuel_cycle = fuel_cycle + 1;
-    instance.set_fuel(fuel);
     let mut last = Instant::now();
-    let mut state = instance
-        .invoke_resumable(
-            &instance
-                .get_function_by_name(&instance.modules[0].name, "main")
-                .unwrap(),
-            (0u32, 0u32),
-        )
-        .unwrap();
+    let mut state = store.resume(resumable_ref).map_err(|e| anyhow!(e))?;
 
     loop {
         let current = Instant::now();
         let dt = current - last;
 
         match state {
-            wasm::InvocationState::Finished(ret) => {
-                let df = fuel.zip(instance.get_fuel()).map(|(a, b)| a - b);
+            resumable::RunState::Resumable {
+                mut resumable_ref, ..
+            } => {
+                let df = store
+                    .access_fuel_mut(&mut resumable_ref, |f| *f)
+                    .map_err(|e| anyhow!(e))?
+                    .zip(fuel)
+                    .map(|(a, b)| b - a);
 
                 acc_t = acc_t + dt;
                 acc_f = acc_f.zip(df).map(|(a, b)| a + b);
@@ -130,28 +146,34 @@ fn run_wasm<'sender>(
 
                 logger.log(current, fuel_cycle, dt, df, acc_t, acc_f, irq)?;
 
-                let _: i32 = ret;
-                break;
-            }
-            wasm::InvocationState::OutOfFuel(mut res) => {
-                let df = fuel.zip(res.get_fuel()).map(|(a, b)| a - b);
-
-                acc_t = acc_t + dt;
-                acc_f = acc_f.zip(df).map(|(a, b)| a + b);
-
-                let irq = mitigator.mitigate(acc_t, acc_f);
-
-                logger.log(current, fuel_cycle, dt, df, acc_t, acc_f, irq)?;
+                store
+                    .access_fuel_mut(&mut resumable_ref, |f| {
+                        *f = fuel;
+                    })
+                    .unwrap();
 
                 fuel_cycle = fuel_cycle + 1;
-                res.set_fuel(fuel);
                 last = Instant::now();
-                state = res.resume().map_err(|err| anyhow!(err))?;
+                state = store.resume(resumable_ref).map_err(|e| anyhow!(e))?;
+                continue;
             }
-            wasm::InvocationState::Canceled => {
+
+            resumable::RunState::Finished {
+                maybe_remaining_fuel,
+                ..
+            } => {
+                let df = maybe_remaining_fuel.zip(fuel).map(|(a, b)| b - a);
+
+                acc_t = acc_t + dt;
+                acc_f = acc_f.zip(df).map(|(a, b)| a + b);
+
+                let irq = mitigator.mitigate(acc_t, acc_f);
+
+                logger.log(current, fuel_cycle, dt, df, acc_t, acc_f, irq)?;
+
                 break;
             }
-        };
+        }
     }
 
     return Ok(());
@@ -172,7 +194,7 @@ impl Mitigator {
         }
     }
 
-    fn mitigate(&self, acc_t: Duration, acc_f: Option<usize>) -> Option<Irq> {
+    fn mitigate(&self, acc_t: Duration, acc_f: Option<u32>) -> Option<Irq> {
         let avgtpf = acc_f.map(|acc_f| (acc_t.as_nanos() * 1000) as u64 / acc_f as u64);
 
         self.wctpf
@@ -194,7 +216,7 @@ impl Mitigator {
 struct WasmRunLogger<'sender> {
     sender: Option<&'sender Sender>,
     timestamp_epoch: Instant,
-    fuel: Option<usize>,
+    fuel: Option<u32>,
     wctpf: Option<u64>,
     fuel_index: usize,
     wctpf_index: usize,
@@ -204,7 +226,7 @@ struct WasmRunLogger<'sender> {
 impl<'sender> WasmRunLogger<'sender> {
     fn new(
         sender: Option<&'sender Sender>,
-        fuel: Option<usize>,
+        fuel: Option<u32>,
         wctpf: Option<u64>,
         fuel_index: usize,
         wctpf_index: usize,
@@ -226,9 +248,9 @@ impl<'sender> WasmRunLogger<'sender> {
         timestamp: Instant,
         fuel_cycle: usize,
         dt: Duration,
-        df: Option<usize>,
+        df: Option<u32>,
         acc_t: Duration,
-        acc_f: Option<usize>,
+        acc_f: Option<u32>,
         irq: Option<Irq>,
     ) -> Result<()> {
         let timestamp = timestamp - self.timestamp_epoch;

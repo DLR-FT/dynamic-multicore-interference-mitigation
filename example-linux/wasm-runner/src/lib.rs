@@ -8,7 +8,7 @@ use ipc_serde::{Ipc, Irq};
 pub struct WasmRunnerIpc {
     #[serde(with = "serde_nanos")]
     pub timestamp: Duration,
-    pub fuel: Option<usize>,
+    pub fuel: Option<u32>,
     pub wctpf: Option<u64>,
     pub i: usize,
     pub j: usize,
@@ -16,10 +16,10 @@ pub struct WasmRunnerIpc {
     pub l: usize,
     #[serde(with = "serde_nanos")]
     pub dt: Duration,
-    pub df: Option<usize>,
+    pub df: Option<u32>,
     #[serde(with = "serde_nanos")]
     pub acc_t: Duration,
-    pub acc_f: Option<usize>,
+    pub acc_f: Option<u32>,
     pub irq: Option<Irq>,
 }
 

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, path::PathBuf, time::Duration};
+use std::{collections::HashMap, fmt::Debug, path::PathBuf};
 
 use anyhow::{Context, Ok, Result};
 use futures::future::join_all;
@@ -10,9 +10,8 @@ use tokio::{
     io,
     process::{Child, Command},
     select, spawn,
-    sync::{mpsc, oneshot, watch},
+    sync::mpsc,
     task::yield_now,
-    time::sleep,
 };
 use tokio_util::sync::CancellationToken;
 

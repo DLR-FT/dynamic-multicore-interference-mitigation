@@ -1,8 +1,18 @@
 [workspace]
+resolver = "3"
 members = [
     # "example",
     "example-linux",
     "example-linux/ipc-serde",
     "example-linux/wasm-runner",
-    "wasm-payloads",
+    "wasm-payload",
 ]
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.5.47", features = ["derive"] }
+ipmpsc = "0.5.1"
+log = "0.4.22"
+env_logger = "0.11.8"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"

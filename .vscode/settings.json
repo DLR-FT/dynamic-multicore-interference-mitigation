@@ -1,9 +1,9 @@
 {
-  "rust-analyzer.cargo.target": "aarch64-unknown-none",
+  // "rust-analyzer.cargo.target": "aarch64-unknown-none",
   "rust-analyzer.cargo.allTargets": false,
-  // "rust-analyzer.cargo.features": [
-  //   "qemu",
-  //   "cortex-a53"
-  // ]
-  "ltex.language": "de-DE"
+  // // "rust-analyzer.cargo.features": [
+  // //   "qemu",
+  // //   "cortex-a53"
+  // // ]
+  // "ltex.language": "de-DE"
 }
