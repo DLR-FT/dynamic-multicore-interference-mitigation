@@ -94,6 +94,7 @@
             pkgs.youplot
             pkgs.wasmtime
             pkgs.wabt
+            pkgs.google-chrome
 
             (pkgs.python3Full.withPackages (python-pkgs: [
             ]))
