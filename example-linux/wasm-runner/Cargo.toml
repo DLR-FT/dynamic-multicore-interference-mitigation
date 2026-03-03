@@ -8,9 +8,7 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 ipmpsc = { workspace = true }
 serde = { workspace = true }
-
-
-serde_nanos = "0.1.4"
+serde_nanos = { workspace = true }
+wasm-interpreter = { workspace = true }
 
 ipc-serde = { path = "../ipc-serde" }
-wasm-interpreter = { git = "https://github.com/dlr-ft/wasm-interpreter.git", tag = "v0.1.0" }

@@ -1,19 +1,9 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     rust = {
       url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    trace32 = {
-      url = "git+https://gitlab.dlr.de/ft-ssy-avs/ast/lauterbach-trace32-flake";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    devshell = {
-      url = "github:numtide/devshell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -28,8 +18,6 @@
       self,
       nixpkgs,
       rust,
-      trace32,
-      devshell,
       treefmt,
     }:
     let
@@ -40,8 +28,6 @@
 
         overlays = [
           (import rust)
-          trace32.overlays.default
-          devshell.overlays.default
         ];
       };
 
@@ -80,15 +66,12 @@
           );
         in
         pkgs.mkShell {
-          # imports = [ "${devshell}/extra/git/hooks.nix" ];
-
           packages = [
             pkgs.gdb
             pkgs.stdenv.cc
             crossPkgs.aarch64-embedded.stdenv.cc
             rust-toolchain
             pkgs.qemu_full
-            # pkgs.trace32-2024-02
             pkgs.stress-ng
             pkgs.hwloc
             pkgs.youplot
@@ -96,19 +79,13 @@
             pkgs.wabt
             pkgs.google-chrome
 
-            (pkgs.python3Full.withPackages (python-pkgs: [
+            (pkgs.python3.withPackages (python-pkgs: [
             ]))
           ];
 
-          LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib/";
-
-          # git.hooks = {
-          #   enable = true;
-          #   pre-commit.text = ''
-          #     nix fmt
-          #     nix flake check
-          #   '';
-          # };
+          env = {
+            LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib/";
+          };
         };
 
       # for `nix fmt`
