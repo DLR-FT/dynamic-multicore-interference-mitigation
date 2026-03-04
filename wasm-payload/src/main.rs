@@ -10,7 +10,8 @@ mod kernel;
 
 use allocator::*;
 
-include!(concat!(env!("OUT_DIR"), "/buf.rs"));
+pub const BUF_LEN: usize = 0x0010_0000;
+pub static BUF: &[u8] = &[0u8; BUF_LEN];
 
 #[unsafe(no_mangle)]
 pub fn main() {

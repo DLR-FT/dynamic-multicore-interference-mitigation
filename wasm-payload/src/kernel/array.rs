@@ -1,5 +1,7 @@
 use core::ops::{Index, IndexMut};
 
+use rand::{Fill, RngExt};
+
 pub fn consume<T>(dummy: T) -> T {
     unsafe {
         // Taken from bencher crate:
@@ -18,6 +20,30 @@ pub struct Array2D<T, const M: usize, const N: usize>(pub [Array1D<T, N>; M]);
 
 #[repr(C, align(32))]
 pub struct Array3D<T, const M: usize, const N: usize, const P: usize>(pub [Array2D<T, N, P>; M]);
+
+impl<T: Fill, const M: usize> Array1D<T, M> {
+    pub fn fill_rand(&mut self, rng: &mut impl RngExt) {
+        rng.fill(&mut self.0);
+    }
+}
+
+impl<T: Fill, const M: usize, const N: usize> Array2D<T, M, N> {
+    pub fn fill_rand(&mut self, rng: &mut impl RngExt) {
+        for x in &mut self.0 {
+            x.fill_rand(rng);
+        }
+    }
+}
+
+impl<T: Fill, const M: usize, const N: usize, const P: usize> Array3D<T, M, N, P> {
+    pub fn fill_rand(&mut self, rng: &mut impl RngExt) {
+        for x in &mut self.0 {
+            for y in &mut x.0 {
+                y.fill_rand(rng);
+            }
+        }
+    }
+}
 
 impl<T, const M: usize> Index<usize> for Array1D<T, M> {
     type Output = T;

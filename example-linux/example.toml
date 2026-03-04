@@ -11,18 +11,22 @@ args = [
     "--fuel",
     "10000",
     "--wctpf",
-    "1000000",
+    "1000000000",
+    "--wctpf",
+    "0",
+    "--wctpf",
+    "25000",
     "--count",
     "100",
 ]
 cpu_core = 6
 ipc_arg = "--ipc"
 
-# [processes.stress]
-# args = ["--class", "cpu-cache", "--seq", "1", "-t", "60m"]
-# id = [1, 0]
-# cmd = "stress-ng"
-# cpu_core = 7
+[processes.stress]
+args = ["--class", "cpu-cache", "--seq", "1", "-t", "60m"]
+id = [1, 0]
+cmd = "stress-ng"
+cpu_core = 7
 
 # kernel cmdline:
 # 5950x:        nohz_full=6-7,22-23 isolcpus=domain,managed_irq,6-7,22-23 irqaffinity=0-5,8-21,24-31

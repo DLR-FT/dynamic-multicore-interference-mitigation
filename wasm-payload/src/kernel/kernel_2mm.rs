@@ -1,6 +1,8 @@
-use crate::kernel::utils::*;
+use rand::SeedableRng;
 
-type T = f64;
+use crate::kernel::array::*;
+
+type T = i64;
 
 pub fn run<const NI: usize, const NJ: usize, const NK: usize, const NL: usize>() {
     let ni = NI;
@@ -8,13 +10,20 @@ pub fn run<const NI: usize, const NJ: usize, const NK: usize, const NL: usize>()
     let nk = NK;
     let nl = NL;
 
-    let alpha = 1.5;
-    let beta = 0.75;
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(123);
+
+    let alpha = -1;
+    let beta = 2;
     let mut tmp = Array2D::<T, NI, NJ>::uninit();
-    let a = Array2D::<T, NI, NK>::uninit();
-    let b = Array2D::<T, NK, NJ>::uninit();
-    let c = Array2D::<T, NJ, NL>::uninit();
+    let mut a = Array2D::<T, NI, NK>::uninit();
+    let mut b = Array2D::<T, NK, NJ>::uninit();
+    let mut c = Array2D::<T, NJ, NL>::uninit();
     let mut d = Array2D::<T, NI, NL>::uninit();
+
+    a.fill_rand(&mut rng);
+    b.fill_rand(&mut rng);
+    c.fill_rand(&mut rng);
+    a.fill_rand(&mut rng);
 
     kernel(ni, nj, nk, nl, alpha, beta, &mut tmp, &a, &b, &c, &mut d);
     consume(d);

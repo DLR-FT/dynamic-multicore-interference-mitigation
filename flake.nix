@@ -79,8 +79,7 @@
             pkgs.wabt
             pkgs.google-chrome
 
-            (pkgs.python3.withPackages (python-pkgs: [
-            ]))
+            (pkgs.python3.withPackages (pyPkgs: [ ]))
           ];
 
           env = {

@@ -32,22 +32,16 @@ unsafe impl GlobalAlloc for Locked<StupidAlloc> {
         let align_offset = ptr.align_offset(layout.align());
         ptr = unsafe { ptr.byte_add(align_offset) };
 
-        if ptr >= end_ptr {
+        let next_ptr = unsafe { ptr.byte_add(layout.size()) };
+
+        if (ptr >= end_ptr) || (next_ptr >= end_ptr) {
             panic!("alloc failed: out of memory.")
         }
 
-        let res = ptr;
-
-        ptr = unsafe { ptr.byte_add(layout.size()) };
-
-        if ptr >= end_ptr {
-            panic!("alloc failed: out of memory.")
-        }
-
-        bump.start_addr = ptr.addr();
+        bump.start_addr = next_ptr.addr();
         bump.end_addr = end_ptr.addr();
 
-        res
+        ptr
     }
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: core::alloc::Layout) {}
