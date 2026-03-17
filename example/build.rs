@@ -14,12 +14,14 @@ pub fn main() {
         quote! {
             __NUM_CPU = 4;
             __STACK_SIZE = 0x10000;
+            __HEAP_SIZE = 0x20000000;
             __TEXT_OFFSET = 0x40000000;
         }
     } else if *IS_FEAT_KR260 || *IS_FEAT_TEBF0818 {
         quote! {
             __NUM_CPU = 4;
             __STACK_SIZE = 0x10000;
+            __HEAP_SIZE = 0x20000000;
             __TEXT_OFFSET = 0x100000;
         }
     } else {

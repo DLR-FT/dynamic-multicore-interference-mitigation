@@ -15,25 +15,24 @@ qemu = []
 kr260 = []
 tebf0818 = []
 
-
 [profile.release]
+debug = "full"
 split-debuginfo = "off"
-debug = false
-strip = "debuginfo"
 
 [dependencies]
 arm64 = { git = "https://github.com/moritz-meier/arm64-rt.git", features = [
-    "critical-section",
     "cortex-a53",
 ] }
 
-arbitrary-int = { version = "2.1.1" }
-embedded-alloc = { version = "0.7.0" }
+simple-alloc = { path = "../simple-alloc" }
+
+spin = { workspace = true }
 
 embedded-hal-nb = "1.0.0"
 sel4-pl011-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }
 sel4-zynqmp-xuartps-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }
 
+# anyhow = { version = "1.0.102", default-features = false }
 wasm-interpreter = { workspace = true }
 
 [build-dependencies]

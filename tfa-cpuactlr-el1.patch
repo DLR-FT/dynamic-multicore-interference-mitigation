@@ -1,0 +1,14 @@
+diff --git a/lib/cpus/aarch64/cortex_a53.S b/lib/cpus/aarch64/cortex_a53.S
+index e3b69abaa..812109ea0 100644
+--- a/lib/cpus/aarch64/cortex_a53.S
++++ b/lib/cpus/aarch64/cortex_a53.S
+@@ -128,6 +128,9 @@ add_erratum_entry cortex_a53, ERRATUM(1530924), ERRATA_A53_1530924
+ cpu_reset_func_start cortex_a53
+ 	/* Enable the SMP bit. */
+ 	sysreg_bit_set CORTEX_A53_ECTLR_EL1, CORTEX_A53_ECTLR_SMP_BIT
++
++	/* Enable EL2 access to CPUACTLR_EL1 */
++	sysreg_bit_set actlr_el3, 0x1
+ cpu_reset_func_end cortex_a53
+ 
+ func cortex_a53_core_pwr_dwn

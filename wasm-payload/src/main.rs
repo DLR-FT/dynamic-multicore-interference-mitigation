@@ -3,19 +3,21 @@
 
 extern crate alloc;
 
-use core::panic::PanicInfo;
+use core::{mem::MaybeUninit, panic::PanicInfo};
 
-mod allocator;
+use simple_alloc::SimpleAlloc;
+
 mod kernel;
 
-use allocator::*;
-
 pub const BUF_LEN: usize = 0x0010_0000;
-pub static BUF: &[u8] = &[0u8; BUF_LEN];
+pub static BUF: &[MaybeUninit<u8>] = &[MaybeUninit::uninit(); BUF_LEN];
+
+#[global_allocator]
+pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
 
 #[unsafe(no_mangle)]
 pub fn main() {
-    unsafe { ALLOCATOR.lock().init(&BUF) };
+    unsafe { ALLOCATOR.init(&BUF) };
 
     kernel::run::<64, 64, 64, 64>();
 }

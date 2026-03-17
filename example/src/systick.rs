@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use arm64::sys_regs::{CNTFRQ_EL0, CNTPCT_EL0};
 
 pub struct SysTick;
@@ -12,21 +14,19 @@ impl SysTick {
     }
 
     pub fn get_time_us() -> u64 {
-        Self::get_cnt() / (Self::get_freq() / 1000000) as u64
+        Self::get_cnt() / (Self::get_freq() as u64 / 1000000)
     }
 
     pub fn wait_us(us: u64) {
-        let start = Self::get_time_us();
-        let end = start + us;
+        let ticks = us * (Self::get_freq() as u64 / 1000000);
+        let end = Self::get_cnt() + ticks;
         loop {
-            if Self::get_time_us() > end {
+            if Self::get_cnt() >= end {
                 break;
             }
 
-            for _ in 0..1000 {
-                unsafe {
-                    core::arch::asm!("nop");
-                }
+            for i in 0..100 {
+                unsafe { asm!("nop") }
             }
         }
     }

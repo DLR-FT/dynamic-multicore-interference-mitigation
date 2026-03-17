@@ -1,21 +1,26 @@
 #![no_std]
 #![no_main]
+#![feature(slice_from_ptr_range)]
 
+use core::arch::asm;
 use core::cell::RefCell;
 use core::fmt::Write as FmtWrite;
 use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
+use core::ptr::addr_of;
+use core::slice;
 
-use arbitrary_int::*;
+extern crate alloc;
 
+use arm64::arbitrary_int::*;
 use arm64::cache::*;
-use arm64::critical_section::*;
 use arm64::mmu::*;
 use arm64::psci::*;
 use arm64::smccc::*;
 use arm64::*;
 
-use embedded_alloc::LlffHeap as Heap;
+use simple_alloc::SimpleAlloc;
+use spin::mutex::SpinMutex;
 
 mod excps;
 mod intruder;
@@ -28,19 +33,18 @@ use excps::*;
 use plat::*;
 use uart::*;
 
-use systick::SysTick;
-use wasm::run_wasm;
-
-const HEAP_SIZE: usize = 1 * 1024 * 1024 * 1024;
+use crate::intruder::IntruderEntryImpl;
+use crate::systick::SysTick;
+use crate::wasm::run_wasm;
 
 #[global_allocator]
-static HEAP: Heap = Heap::empty();
+pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
 
-static L0TABLE: Mutex<RefCell<TranslationTable<Level0>>> =
-    Mutex::new(RefCell::new(TranslationTable::DEFAULT));
+static CORE0_L0TABLE: SpinMutex<RefCell<TranslationTable<Level0>>> =
+    SpinMutex::new(RefCell::new(TranslationTable::DEFAULT));
 
-static L1TABLE: Mutex<RefCell<TranslationTable<Level1>>> =
-    Mutex::new(RefCell::new(TranslationTable::DEFAULT));
+static CORE0_L1TABLE: SpinMutex<RefCell<TranslationTable<Level1>>> =
+    SpinMutex::new(RefCell::new(TranslationTable::DEFAULT));
 
 const DEVICE_ATTRS: BlockAttrs = BlockAttrs::DEFAULT
     .with_mem_type(MemoryTyp::Device_nGnRnE)
@@ -50,18 +54,25 @@ const DEVICE_ATTRS: BlockAttrs = BlockAttrs::DEFAULT
 
 const NORMAL_ATTRS: BlockAttrs = BlockAttrs::DEFAULT
     .with_mem_type(MemoryTyp::Normal_Cacheable)
-    .with_shareability(Shareability::Outer)
+    .with_shareability(Shareability::Inner)
     .with_access(Access::PrivReadWrite)
     .with_security(SecurityDomain::NonSecure);
 
 #[entry(exceptions = Excps)]
 unsafe fn main(info: EntryInfo) -> ! {
-    arm64::sys_regs::CPUACTLR_EL1
-        .modify(|x| x.with_L1RADIS(u2::new(0b11)).with_RADIS(u2::new(0b11)));
+    arm64::sys_regs::CPUACTLR_EL1.modify(|x| {
+        x.with_L1RADIS(u2::new(0b11))
+            .with_RADIS(u2::new(0b11))
+            .with_DTAH(true)
+            .with_L1PCTL(u3::new(0))
+    });
 
-    critical_section::with(|cs| {
-        let mut l0 = L0TABLE.borrow_ref_mut(cs);
-        let mut l1 = L1TABLE.borrow_ref_mut(cs);
+    {
+        let lock_l0 = CORE0_L0TABLE.lock();
+        let mut l0 = lock_l0.borrow_mut();
+
+        let lock_l1 = CORE0_L1TABLE.lock();
+        let mut l1 = lock_l1.borrow_mut();
 
         match () {
             #[cfg(feature = "qemu")]
@@ -94,68 +105,60 @@ unsafe fn main(info: EntryInfo) -> ! {
 
         ICache::enable();
         DCache::enable();
-    });
+    }
 
     DCache::op_all(CacheOp::CleanInvalidate);
 
-    {
-        static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
-        unsafe { HEAP.init(&raw mut HEAP_MEM as usize, HEAP_SIZE) }
-    }
+    UART_DRIVER.lock().borrow_mut().init();
 
-    critical_section::with(|cs| {
-        UART_DRIVER.borrow_ref_mut(cs).init();
-    });
+    write!(UartWriter, "Hello World\n").unwrap();
 
-    UartWriter
-        .write_fmt(format_args!(
-            "\n\n\n\nHello World! cpu_idx = {}\n",
-            info.cpu_idx
-        ))
-        .unwrap();
+    write!(UartWriter, "cpu_idx = {} ...\n", info.cpu_idx).unwrap();
 
-    Psci::cpu_on_64::<Smccc<SMC>>(
-        1,
-        (start::<intruder::IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
-        0,
-    )
-    .unwrap();
+    start_core::<IntruderEntryImpl>(1);
+    start_core::<IntruderEntryImpl>(2);
+    start_core::<IntruderEntryImpl>(3);
 
-    // Psci::cpu_on_64::<Smccc<SMC>>(
-    //     2,
-    //     (start::<IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
-    //     0,
-    // )
-    // .unwrap();
-
-    // Psci::cpu_on_64::<Smccc<SMC>>(
-    //     3,
-    //     (start::<IntruderEntryImpl, Excps> as *const fn() -> !) as u64,
-    //     0,
-    // )
-    // .unwrap();
-
-    // SysTick::wait_us(1000 * 1000);
+    SysTick::wait_us(1000000);
 
     loop {
-        ICache::invalidate_all();
-        DCache::op_all(CacheOp::CleanInvalidate);
+        unsafe extern "C" {
+            static mut __heap_start: MaybeUninit<u8>;
+            static mut __heap_end: MaybeUninit<u8>;
+        }
 
-        UartWriter.write_str("running wasm ...\n").unwrap();
+        let heap_start = addr_of!(__heap_start);
+        let heap_end = addr_of!(__heap_end);
+
+        let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
+
+        unsafe { ALLOCATOR.init(heap_buf) };
 
         const WASM_BYTES: &[u8] =
-            include_bytes!("../../target/wasm32-unknown-unknown/release/_2mm.wasm");
-        run_wasm(WASM_BYTES).unwrap();
+            include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
+        run_wasm(WASM_BYTES);
+    }
+}
 
-        UartWriter.write_str("done.\n").unwrap();
+fn start_core<E: Entry>(core_id: u64) {
+    Psci::cpu_on_64::<Smccc<SMC>>(core_id, (start::<E, Excps> as *const fn() -> !) as u64, 0)
+        .unwrap();
+
+    loop {
+        let Ok(state) = Psci::node_hw_state_64::<Smccc<SMC>>(core_id, 0) else {
+            break;
+        };
+
+        match state {
+            NodeHwState::HwOn => break,
+            _ => SysTick::wait_us(10000),
+        }
     }
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    UartWriter
-        .write_fmt(format_args!("{}", _info.message()))
-        .unwrap();
+fn panic(info: &PanicInfo) -> ! {
+    let _x = write!(UartWriter, "PANIC: {}", info.message());
 
     loop {
         unsafe { core::arch::asm!("nop") };

@@ -1,139 +1,98 @@
-use core::{fmt::Write, ops::Sub};
+use core::fmt::Write;
 
-use arm64::pmu::{CounterValue, PMU};
-use wasm::{RuntimeInstance, validate};
+use alloc::vec::Vec;
+
+use arm64::pmu::PMU;
+use wasm::{ExternVal, HaltExecutionError, Value, resumable};
 
 use crate::{systick::SysTick, uart::UartWriter};
 
-pub fn run_wasm(wasm_bytes: &[u8]) -> Result<(), ()> {
-    let validation_info = match validate(&wasm_bytes) {
-        Ok(table) => table,
-        Err(_err) => {
-            return Err(());
-        }
-    };
+pub fn run_wasm(wasm_bytes: &[u8]) {
+    let fuel = Some(10000);
 
-    let mut instance = match RuntimeInstance::new(&validation_info) {
-        Ok(instance) => instance,
-        Err(_err) => {
-            return Err(());
-        }
-    };
+    let validation_info = wasm::validate(wasm_bytes).unwrap();
 
-    let df = 1000 * 100;
+    let mut store = wasm::Store::new(());
 
-    instance.set_fuel(Some(df));
+    fn wasm_panic_handler(
+        _: &mut (),
+        _values: Vec<Value>,
+    ) -> Result<Vec<Value>, HaltExecutionError> {
+        Err(HaltExecutionError)
+    }
 
-    PMU::enable();
-    PMU::setup_counter(0, arm64::pmu::Event::CPU_CYCLES);
-    PMU::setup_counter(1, arm64::pmu::Event::INST_RETIRED);
-    PMU::setup_counter(2, arm64::pmu::Event::L1D_CACHE);
-    PMU::setup_counter(3, arm64::pmu::Event::L2D_CACHE);
+    let wasm_panic = store.func_alloc_typed::<(), ()>(wasm_panic_handler);
 
-    PMU::reset();
-    let mut last = PerfState::get();
-
-    PMU::start();
-    let mut state = instance
-        .invoke_resumable(
-            &instance
-                .get_function_by_name(&instance.modules[0].name, "main")
-                .unwrap(),
-            (0u32, 0u32),
+    let module = store
+        .module_instantiate(
+            &validation_info,
+            alloc::vec![ExternVal::Func(wasm_panic)],
+            fuel,
         )
+        .unwrap()
+        .module_addr;
+
+    let wasm_main = store
+        .instance_export(module, "main")
+        .unwrap()
+        .as_func()
         .unwrap();
 
-    let mut res: Option<i32> = None;
+    let resumable_ref = store
+        .create_resumable(wasm_main, alloc::vec![], fuel)
+        .unwrap();
+
+    let mut fuel_cycle = 0;
+    let mut last = SysTick::get_time_us();
+    let mut state = store.resume(resumable_ref).unwrap();
+
     loop {
-        PMU::stop();
+        let current = SysTick::get_time_us();
+        let dt = current - last;
+
         match state {
-            wasm::InvocationState::Finished(ret) => {
-                res.replace(ret);
-                break;
-            }
-            wasm::InvocationState::OutOfFuel(mut res) => {
-                let current = PerfState::get();
-                let time = SysTick::get_time_us();
-                let delta = current - last;
+            resumable::RunState::Resumable {
+                mut resumable_ref, ..
+            } => {
+                let df = store
+                    .access_fuel_mut(&mut resumable_ref, |f| *f)
+                    .unwrap()
+                    .zip(fuel)
+                    .map(|(a, b)| b - a);
 
                 UartWriter
-                    .write_fmt(format_args!("{:?}: {:?}\n", time, delta))
+                    .write_fmt(format_args!(
+                        "refuel {}, df = {:?}, dt = {:?}\n",
+                        fuel_cycle, df, dt
+                    ))
                     .unwrap();
 
-                res.set_fuel(Some(df));
+                store
+                    .access_fuel_mut(&mut resumable_ref, |f| {
+                        *f = fuel;
+                    })
+                    .unwrap();
 
-                PMU::reset();
-                last = PerfState::get();
-
-                PMU::start();
-                state = res.resume().unwrap();
+                fuel_cycle = fuel_cycle + 1;
+                last = SysTick::get_time_us();
+                state = store.resume(resumable_ref).unwrap();
+                continue;
             }
-            wasm::InvocationState::Canceled => {
+
+            resumable::RunState::Finished {
+                maybe_remaining_fuel,
+                ..
+            } => {
+                let df = maybe_remaining_fuel.zip(fuel).map(|(a, b)| b - a);
+
+                UartWriter
+                    .write_fmt(format_args!(
+                        "refuel {}, df = {:?}, dt = {:?}\n",
+                        fuel_cycle, df, dt
+                    ))
+                    .unwrap();
                 break;
             }
-        };
-    }
-
-    return Ok(());
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PerfState {
-    cycles: Option<u64>,
-    cpu_cycles: Option<u32>,
-    inst_retired: Option<u32>,
-    l1d_cache: Option<u32>,
-    l2d_cache: Option<u32>,
-}
-
-impl PerfState {
-    fn get() -> Self {
-        Self {
-            cycles: PMU::get_cycle_counter().into_option(),
-            cpu_cycles: PMU::get_counter(0).into_option(),
-            inst_retired: PMU::get_counter(1).into_option(),
-            l1d_cache: PMU::get_counter(2).into_option(),
-            l2d_cache: PMU::get_counter(3).into_option(),
-        }
-    }
-}
-
-impl Sub for PerfState {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self {
-            cycles: self.cycles.sub(rhs.cycles),
-            cpu_cycles: self.cpu_cycles.sub(rhs.cpu_cycles),
-            inst_retired: self.inst_retired.sub(rhs.inst_retired),
-            l1d_cache: self.l1d_cache.sub(rhs.l1d_cache),
-            l2d_cache: self.l2d_cache.sub(rhs.l2d_cache),
-        }
-    }
-}
-
-trait CounterValueExt<T> {
-    fn into_option(self) -> Option<T>;
-}
-
-impl<T> CounterValueExt<T> for CounterValue<T> {
-    fn into_option(self) -> Option<T> {
-        match self {
-            CounterValue::Ok(x) => Some(x),
-            _ => None,
-        }
-    }
-}
-
-trait OptionExt<T> {
-    fn sub(self, rhs: Self) -> Self;
-}
-
-impl<T: Sub<Output = T>> OptionExt<T> for Option<T> {
-    fn sub(self, rhs: Self) -> Self {
-        match (self, rhs) {
-            (Some(x), Some(y)) => Some(x - y),
-            _ => None,
         }
     }
 }

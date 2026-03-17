@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 rand = { version = "0.10.0", default-features = false }
-spin = "0.10.0"
 
+simple-alloc = { path = "../simple-alloc" }
 
 [build-dependencies]
 anyhow = { workspace = true }
