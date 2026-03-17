@@ -482,6 +482,7 @@ dependencies = [
  "simple-alloc",
  "spin",
  "wasm-interpreter",
+ "wasm-payload",
 ]
 
 [[package]]

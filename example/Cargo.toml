@@ -25,6 +25,7 @@ arm64 = { git = "https://github.com/moritz-meier/arm64-rt.git", features = [
 ] }
 
 simple-alloc = { path = "../simple-alloc" }
+wasm-payload = { path = "../wasm-payload" }
 
 spin = { workspace = true }
 
