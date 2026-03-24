@@ -17,6 +17,7 @@ tebf0818 = []
 
 [profile.release]
 debug = "full"
+strip = "none"
 split-debuginfo = "off"
 
 [dependencies]
@@ -24,10 +25,14 @@ arm64 = { git = "https://github.com/moritz-meier/arm64-rt.git", features = [
     "cortex-a53",
 ] }
 
+analyzer = { path = "../analyzer" }
+
 simple-alloc = { path = "../simple-alloc" }
 wasm-payload = { path = "../wasm-payload" }
 
 spin = { workspace = true }
+
+serde-json-core = { version = "0.6.0", default-features = false }
 
 embedded-hal-nb = "1.0.0"
 sel4-pl011-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }

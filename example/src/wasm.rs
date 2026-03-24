@@ -1,98 +1,176 @@
-use core::fmt::Write;
-
 use alloc::vec::Vec;
 
-use arm64::pmu::PMU;
+use analyzer::{PMUInfo, RefuelUpdate};
+use arm64::pmu::{self, PMU};
 use wasm::{ExternVal, HaltExecutionError, Value, resumable};
 
-use crate::{systick::SysTick, uart::UartWriter};
+use crate::{CounterValueExt, systick::SysTick, uart::UartWriter};
 
-pub fn run_wasm(wasm_bytes: &[u8]) {
-    let fuel = Some(10000);
+pub struct WasmRunner<'wasm> {
+    pub fuel_amount: Option<u32>,
 
-    let validation_info = wasm::validate(wasm_bytes).unwrap();
+    run_idx: usize,
 
-    let mut store = wasm::Store::new(());
+    wasm_bytes: &'wasm [u8],
+}
 
-    fn wasm_panic_handler(
-        _: &mut (),
-        _values: Vec<Value>,
-    ) -> Result<Vec<Value>, HaltExecutionError> {
-        Err(HaltExecutionError)
+impl<'wasm> WasmRunner<'wasm> {
+    pub fn new(wasm_bytes: &'wasm [u8], fuel_amount: Option<u32>) -> Self {
+        Self {
+            fuel_amount,
+            run_idx: 0,
+
+            wasm_bytes,
+        }
     }
 
-    let wasm_panic = store.func_alloc_typed::<(), ()>(wasm_panic_handler);
+    pub fn run(&mut self, intruder_state: usize) {
+        let validation_info = wasm::validate(self.wasm_bytes).unwrap();
+        let mut store = wasm::Store::new(());
 
-    let module = store
-        .module_instantiate(
-            &validation_info,
-            alloc::vec![ExternVal::Func(wasm_panic)],
-            fuel,
-        )
-        .unwrap()
-        .module_addr;
+        fn wasm_panic_handler(
+            _: &mut (),
+            _values: Vec<Value>,
+        ) -> Result<Vec<Value>, HaltExecutionError> {
+            Err(HaltExecutionError)
+        }
 
-    let wasm_main = store
-        .instance_export(module, "main")
-        .unwrap()
-        .as_func()
-        .unwrap();
+        let wasm_panic = store.func_alloc_typed::<(), ()>(wasm_panic_handler);
 
-    let resumable_ref = store
-        .create_resumable(wasm_main, alloc::vec![], fuel)
-        .unwrap();
+        let main = store
+            .module_instantiate(
+                &validation_info,
+                alloc::vec![ExternVal::Func(wasm_panic)],
+                self.fuel_amount,
+            )
+            .unwrap()
+            .module_addr;
 
-    let mut fuel_cycle = 0;
-    let mut last = SysTick::get_time_us();
-    let mut state = store.resume(resumable_ref).unwrap();
+        let wasm_main = store
+            .instance_export(main, "main")
+            .unwrap()
+            .as_func()
+            .unwrap();
 
-    loop {
-        let current = SysTick::get_time_us();
-        let dt = current - last;
+        let resumable_ref = store
+            .create_resumable(wasm_main, alloc::vec![], self.fuel_amount)
+            .unwrap();
 
-        match state {
-            resumable::RunState::Resumable {
-                mut resumable_ref, ..
-            } => {
-                let df = store
-                    .access_fuel_mut(&mut resumable_ref, |f| *f)
-                    .unwrap()
-                    .zip(fuel)
-                    .map(|(a, b)| b - a);
+        PMU::enable();
 
-                UartWriter
-                    .write_fmt(format_args!(
-                        "refuel {}, df = {:?}, dt = {:?}\n",
-                        fuel_cycle, df, dt
-                    ))
-                    .unwrap();
+        PMU::setup_counter(0, pmu::Event::L1D_CACHE);
+        PMU::setup_counter(1, pmu::Event::L1D_CACHE_WB);
+        PMU::setup_counter(2, pmu::Event::L1D_CACHE_REFILL);
 
-                store
-                    .access_fuel_mut(&mut resumable_ref, |f| {
-                        *f = fuel;
-                    })
-                    .unwrap();
+        PMU::setup_counter(3, pmu::Event::L2D_CACHE);
+        PMU::setup_counter(4, pmu::Event::L2D_CACHE_WB);
+        PMU::setup_counter(5, pmu::Event::L2D_CACHE_REFILL);
 
-                fuel_cycle = fuel_cycle + 1;
-                last = SysTick::get_time_us();
-                state = store.resume(resumable_ref).unwrap();
-                continue;
-            }
+        let mut refuel_idx = 0;
+        let mut acc_t = 0;
+        let mut acc_f = Some(0);
 
-            resumable::RunState::Finished {
-                maybe_remaining_fuel,
-                ..
-            } => {
-                let df = maybe_remaining_fuel.zip(fuel).map(|(a, b)| b - a);
+        PMU::reset();
+        PMU::start();
 
-                UartWriter
-                    .write_fmt(format_args!(
-                        "refuel {}, df = {:?}, dt = {:?}\n",
-                        fuel_cycle, df, dt
-                    ))
-                    .unwrap();
-                break;
+        let mut last = SysTick::get_time_us();
+        let mut state = store.resume(resumable_ref).unwrap();
+
+        loop {
+            let current = SysTick::get_time_us();
+            PMU::stop();
+
+            let dt = current - last;
+
+            let pmu_info = PMUInfo {
+                l1d_access: PMU::get_counter(0).ok(),
+                l1d_wb: PMU::get_counter(1).ok(),
+                l1d_refill: PMU::get_counter(2).ok(),
+
+                l2d_access: PMU::get_counter(3).ok(),
+                l2d_wb: PMU::get_counter(4).ok(),
+                l2d_refill: PMU::get_counter(5).ok(),
+            };
+
+            match state {
+                resumable::RunState::Resumable {
+                    mut resumable_ref, ..
+                } => {
+                    let df = store
+                        .access_fuel_mut(&mut resumable_ref, |f| *f)
+                        .unwrap()
+                        .zip(self.fuel_amount)
+                        .map(|(a, b)| b - a);
+
+                    acc_t = acc_t + dt;
+                    acc_f = acc_f.zip(df).map(|(a, b)| a + b);
+
+                    let update = RefuelUpdate {
+                        timestamp: current,
+                        fuel: self.fuel_amount,
+                        run_idx: self.run_idx,
+                        refuel_idx,
+                        intruder_state,
+                        dt,
+                        df,
+                        acc_t,
+                        acc_f,
+                        pmu_info: Some(pmu_info),
+                    };
+
+                    let buf = &mut [0u8; 1024];
+                    let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
+                    buf[n] = '\n' as u8;
+                    UartWriter::write_bytes(&buf[..n + 1]).unwrap();
+
+                    store
+                        .access_fuel_mut(&mut resumable_ref, |f| {
+                            *f = self.fuel_amount;
+                        })
+                        .unwrap();
+
+                    refuel_idx = refuel_idx + 1;
+                    PMU::reset();
+                    PMU::start();
+                    last = SysTick::get_time_us();
+                    state = store.resume(resumable_ref).unwrap();
+                    continue;
+                }
+
+                resumable::RunState::Finished {
+                    maybe_remaining_fuel,
+                    ..
+                } => {
+                    let df = maybe_remaining_fuel
+                        .zip(self.fuel_amount)
+                        .map(|(a, b)| b - a);
+
+                    acc_t = acc_t + dt;
+                    acc_f = acc_f.zip(df).map(|(a, b)| a + b);
+
+                    let update = RefuelUpdate {
+                        timestamp: current,
+                        fuel: self.fuel_amount,
+                        refuel_idx,
+                        run_idx: self.run_idx,
+                        intruder_state,
+                        dt,
+                        df,
+                        acc_t,
+                        acc_f,
+                        pmu_info: Some(pmu_info),
+                    };
+
+                    let buf = &mut [0u8; 1024];
+                    let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
+                    buf[n] = '\n' as u8;
+                    UartWriter::write_bytes(&buf[..n + 1]).unwrap();
+
+                    break;
+                }
             }
         }
+
+        self.run_idx += 1;
     }
 }

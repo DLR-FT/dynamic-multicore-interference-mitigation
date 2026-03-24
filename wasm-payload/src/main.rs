@@ -19,7 +19,7 @@ pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
 pub fn main() {
     unsafe { ALLOCATOR.init(&BUF) };
 
-    kernel::run::<256, 256, 256, 256>();
+    kernel::run::<128, 128, 128, 128>();
 }
 
 unsafe extern "C" {

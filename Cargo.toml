@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "analyzer",
     "example",
     "example-linux",
     "example-linux/ipc-serde",
@@ -16,7 +17,7 @@ ipmpsc = "0.5.1"
 env_logger = "0.11.9"
 log = "0.4.22"
 quote = "1.0.44"
-serde = { version = "1.0.228", features = ["derive"] }
+serde = { version = "1.0.228", default-features = false, features = ["derive"] }
 serde_json = "1.0.149"
 serde_nanos = "0.1.4"
 spin = { version = "0.10.0", default-features = false, features = [

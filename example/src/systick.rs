@@ -25,7 +25,7 @@ impl SysTick {
                 break;
             }
 
-            for i in 0..100 {
+            for _i in 0..100 {
                 unsafe { asm!("nop") }
             }
         }

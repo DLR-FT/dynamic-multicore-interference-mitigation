@@ -116,8 +116,6 @@ unsafe fn intruder_main(info: EntryInfo) -> u8 {
 
     DCache::op_all(CacheOp::CleanInvalidate);
 
-    write!(UartWriter, "cpu_idx = {} ...\n", info.cpu_idx).unwrap();
-
     PMU::enable();
 
     PMU::setup_counter(0, arm64::pmu::Event::L1D_CACHE);
