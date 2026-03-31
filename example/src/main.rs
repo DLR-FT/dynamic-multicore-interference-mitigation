@@ -125,8 +125,8 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     let sgi_intid = IntId::sgi(3);
 
-    GIC_DRIVER.lock_irq(|lock| {
-        let mut gic = lock.borrow_mut();
+    GIC_DRIVER.lock_irq(|gic| {
+        let mut gic = gic.borrow_mut();
 
         gic.setup();
         gic.set_priority_mask(0xff);
@@ -138,7 +138,7 @@ unsafe fn main(_info: EntryInfo) -> ! {
         gic.set_trigger(sgi_intid, arm_gic::Trigger::Edge);
     });
 
-    UART_DRIVER.lock_irq(|lock| lock.borrow_mut().init());
+    UART_DRIVER.lock_irq(|uart| uart.borrow_mut().init());
 
     let logger = LOGGER.call_once(|| Logger::new(&UART_DRIVER));
     set_logger(logger).unwrap();
@@ -164,8 +164,8 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     SysTick::wait_us(1000000);
 
-    GIC_DRIVER.lock_irq(|lock| {
-        let mut gic = lock.borrow_mut();
+    GIC_DRIVER.lock_irq(|gic| {
+        let mut gic = gic.borrow_mut();
 
         gic.send_sgi(
             sgi_intid,

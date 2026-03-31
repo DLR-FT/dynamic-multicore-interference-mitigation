@@ -56,15 +56,15 @@ where
     }
 
     fn log(&self, record: &log::Record) {
-        self.uart.lock_irq(|lock| {
-            let uart = &mut *lock.borrow_mut() as &mut dyn serial::Write<_, Error = Infallible>;
+        self.uart.lock_irq(|uart| {
+            let uart = &mut *uart.borrow_mut() as &mut dyn serial::Write<_, Error = Infallible>;
             writeln!(uart, "[{}] {}", record.level(), record.args()).unwrap();
         });
     }
 
     fn flush(&self) {
-        self.uart.lock_irq(|lock| {
-            let mut uart = lock.borrow_mut();
+        self.uart.lock_irq(|uart| {
+            let mut uart = uart.borrow_mut();
             uart.flush().unwrap();
         });
     }
