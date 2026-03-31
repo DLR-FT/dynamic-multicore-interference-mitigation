@@ -1,5 +1,6 @@
-use core::{arch::asm, cell::RefCell, fmt::Write, mem::MaybeUninit};
+use core::{arch::asm, cell::RefCell, mem::MaybeUninit, ptr::write_volatile};
 
+use arm_gic::{IntId, InterruptGroup};
 use arm64::{
     Entry, EntryInfo,
     arbitrary_int::{u2, u3},
@@ -10,8 +11,7 @@ use arm64::{
 
 use spin::mutex::SpinMutex;
 
-use crate::uart::UartWriter;
-use crate::{DEVICE_ATTRS, NORMAL_ATTRS};
+use crate::{DEVICE_ATTRS, NORMAL_ATTRS, plat::GIC_DRIVER, spin_utils::SpinMutexExt};
 
 static CORE1_L0TABLE: SpinMutex<RefCell<TranslationTable<Level0>>> =
     SpinMutex::new(RefCell::new(TranslationTable::DEFAULT));
@@ -97,6 +97,7 @@ unsafe fn intruder_main(info: EntryInfo) -> u8 {
                 l1.map_block(0x0000_0000, 0x0000_0000, NORMAL_ATTRS);
                 l1.map_block(0x4000_0000, 0x4000_0000, NORMAL_ATTRS);
                 l1.map_block(0xC000_0000, 0xC000_0000, DEVICE_ATTRS);
+                l1.map_block(0xF000_0000, 0xF000_0000, DEVICE_ATTRS);
             }
 
             #[cfg(feature = "kr260")]
@@ -105,6 +106,7 @@ unsafe fn intruder_main(info: EntryInfo) -> u8 {
                 l1.map_block(0x0000_0000, 0x0000_0000, NORMAL_ATTRS);
                 l1.map_block(0x4000_0000, 0x4000_0000, NORMAL_ATTRS);
                 l1.map_block(0xC000_0000, 0xC000_0000, DEVICE_ATTRS);
+                l1.map_block(0xF000_0000, 0xF000_0000, DEVICE_ATTRS);
             }
         }
 
@@ -115,6 +117,22 @@ unsafe fn intruder_main(info: EntryInfo) -> u8 {
     }
 
     DCache::op_all(CacheOp::CleanInvalidate);
+
+    let sgi_intid = IntId::sgi(3);
+    GIC_DRIVER.lock_irq(|lock| {
+        let mut gic = lock.borrow_mut();
+
+        gic.setup();
+        gic.set_priority_mask(0xff);
+        gic.enable_group0(true);
+
+        gic.set_group(sgi_intid, InterruptGroup::Group0);
+        gic.set_interrupt_priority(sgi_intid, 0);
+        gic.enable_interrupt(sgi_intid, true).unwrap();
+        gic.set_trigger(sgi_intid, arm_gic::Trigger::Edge);
+    });
+
+    arm_gic::irq_enable();
 
     PMU::enable();
 
@@ -127,46 +145,18 @@ unsafe fn intruder_main(info: EntryInfo) -> u8 {
     PMU::setup_counter(5, arm64::pmu::Event::L2D_CACHE_REFILL);
 
     loop {
-        let mut ptr =
-            unsafe { &FOO[info.cpu_idx - 1].0 as *const _ as *mut [MaybeUninit<u8>; FOO_LEN] };
-        let mut end = unsafe { ptr.byte_offset(FOO_LEN as isize) };
+        let buf = unsafe { &mut FOO[info.cpu_idx - 1].0 };
 
-        PMU::reset();
-        PMU::start();
+        const N: usize = 16;
+        const CACHE_LINE_LEN: usize = 64;
+        const STRIDE: usize = FOO_LEN / N;
 
-        unsafe {
-            asm!(
-                "2:",                           // Start loop
-                "cmp {i}, {end}",
-                "b.hs 3f",                      // done
-                "mrs {x:x}, CNTPCT_EL0",
-                "str {x:x}, [{i}], #0x40",
-                "b 2b",
-                "3:",                           // end
-                "nop",
-                i = inout(reg) ptr,
-                end = inout(reg) end,
-                x = out(reg) _,
-            )
-        };
-
-        PMU::stop();
-
-        let l1d = PMU::get_counter(0);
-        let l1d_wb = PMU::get_counter(1);
-        let l1d_refill = PMU::get_counter(2);
-
-        let l2d = PMU::get_counter(3);
-        let l2d_wb = PMU::get_counter(4);
-        let l2d_refill = PMU::get_counter(5);
-
-        // if info.cpu_idx == 1 {
-        //     write!(
-        //     UartWriter,
-        //     "cpu_idx = {},  l1d = {:?}, l1d_wb = {:?}, l1d_refill = {:?}, l2d = {:?}, l2d_wb = {:?}, l2d_refill = {:?}\n",
-        //     info.cpu_idx, l1d, l1d_wb, l1d_refill, l2d, l2d_wb, l2d_refill
-        // )
-        // .unwrap();
-        // }
+        for i in (0..STRIDE).step_by(CACHE_LINE_LEN) {
+            for j in (0..FOO_LEN).step_by(STRIDE) {
+                let x: u64;
+                unsafe { asm!("mrs {x}, CNTPCT_EL0", x = lateout(reg) x) }
+                unsafe { write_volatile(&mut buf[i + j] as *const _ as *mut u8, x as u8) }
+            }
+        }
     }
 }

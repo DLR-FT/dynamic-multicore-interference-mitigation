@@ -46,7 +46,8 @@ fn kernel<const NI: usize, const NJ: usize, const NK: usize, const NL: usize>(
         for j in 0..nj {
             tmp[i][j] = T::default();
             for k in 0..nk {
-                tmp[i][j] += alpha * a[i][k] * b[k][j];
+                tmp[i][j] =
+                    tmp[i][j].wrapping_add(alpha.wrapping_mul(a[i][k]).wrapping_mul(b[k][j]));
             }
         }
     }
@@ -54,7 +55,7 @@ fn kernel<const NI: usize, const NJ: usize, const NK: usize, const NL: usize>(
         for j in 0..nl {
             d[i][j] *= beta;
             for k in 0..nj {
-                d[i][j] += tmp[i][k] * c[k][j];
+                d[i][j] = d[i][j].wrapping_add(tmp[i][k].wrapping_mul(c[k][j]));
             }
         }
     }

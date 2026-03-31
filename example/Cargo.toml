@@ -25,11 +25,14 @@ arm64 = { git = "https://github.com/moritz-meier/arm64-rt.git", features = [
     "cortex-a53",
 ] }
 
+arm-gic = { version = "0.8.1", default-features = false, features = ["el2"] }
+
 analyzer = { path = "../analyzer" }
 
 simple-alloc = { path = "../simple-alloc" }
 wasm-payload = { path = "../wasm-payload" }
 
+log = { workspace = true }
 spin = { workspace = true }
 
 serde-json-core = { version = "0.6.0", default-features = false }
