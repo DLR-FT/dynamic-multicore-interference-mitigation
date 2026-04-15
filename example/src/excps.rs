@@ -3,7 +3,7 @@ use core::arch::asm;
 use arm64::exceptions::*;
 use log::trace;
 
-use crate::plat::GIC_DRIVER;
+use crate::{plat::GIC_DRIVER, spin_utils::SpinMutexExt};
 pub struct Excps;
 
 impl Exceptions<ELx_SP_EL0> for Excps {}
@@ -20,10 +20,11 @@ impl Exceptions<ELx_SP_ELx> for Excps {
     }
 
     fn irq(_frame: &mut ExceptionFrame) {
-        let gic_lock = GIC_DRIVER.lock();
-        let mut gic = gic_lock.borrow_mut();
+        let intid = GIC_DRIVER.lock_irq(|gic_lock| {
+            let mut gic = gic_lock.borrow_mut();
+            gic.get_and_acknowledge_interrupt(arm_gic::InterruptGroup::Group0)
+        });
 
-        let intid = gic.get_and_acknowledge_interrupt(arm_gic::InterruptGroup::Group0);
         let Some(intid) = intid else { return };
 
         let mpidr: u64;
@@ -32,7 +33,10 @@ impl Exceptions<ELx_SP_ELx> for Excps {
 
         trace!("irq: {:?} mpidr: {}", intid, mpidr);
 
-        gic.end_interrupt(intid, arm_gic::InterruptGroup::Group0);
+        GIC_DRIVER.lock_irq(|gic_lock| {
+            let mut gic = gic_lock.borrow_mut();
+            gic.end_interrupt(intid, arm_gic::InterruptGroup::Group0);
+        });
     }
 }
 

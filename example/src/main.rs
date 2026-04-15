@@ -2,20 +2,16 @@
 #![no_main]
 #![feature(slice_from_ptr_range)]
 
+extern crate alloc;
+
 use core::cell::RefCell;
 use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 use core::ptr::addr_of;
 use core::slice;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicUsize;
 
-extern crate alloc;
-
-use analyzer::PMUInfo;
-use analyzer::RefuelUpdate;
-use arm_gic::IntId;
-use arm_gic::InterruptGroup;
-use arm_gic::gicv2::SgiTarget;
-use arm_gic::gicv2::SgiTargetListFilter;
 use arm64::arbitrary_int::*;
 use arm64::cache::*;
 use arm64::mmu::*;
@@ -25,6 +21,11 @@ use arm64::psci::*;
 use arm64::smccc::*;
 use arm64::*;
 
+use arm_gic::IntId;
+use arm_gic::InterruptGroup;
+use arm_gic::gicv2::SgiTarget;
+use arm_gic::gicv2::SgiTargetListFilter;
+
 use log::error;
 use log::info;
 use log::set_logger;
@@ -32,6 +33,9 @@ use log::set_max_level;
 use simple_alloc::SimpleAlloc;
 use spin::Once;
 use spin::mutex::SpinMutex;
+
+use analyzer::PMUInfo;
+use analyzer::RefuelUpdate;
 
 mod excps;
 mod intruder;
@@ -71,6 +75,10 @@ const NORMAL_ATTRS: BlockAttrs = BlockAttrs::DEFAULT
     .with_shareability(Shareability::Inner)
     .with_access(Access::PrivReadWrite)
     .with_security(SecurityDomain::NonSecure);
+
+static INTRUDER_STATE: AtomicUsize = AtomicUsize::new(0);
+
+const INTID_SGI3: IntId = IntId::sgi(3);
 
 #[entry(exceptions = Excps)]
 unsafe fn main(_info: EntryInfo) -> ! {
@@ -123,19 +131,12 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     DCache::op_all(CacheOp::CleanInvalidate);
 
-    let sgi_intid = IntId::sgi(3);
-
     GIC_DRIVER.lock_irq(|gic| {
         let mut gic = gic.borrow_mut();
 
         gic.setup();
         gic.set_priority_mask(0xff);
         gic.enable_group0(true);
-
-        gic.set_group(sgi_intid, InterruptGroup::Group0);
-        gic.set_interrupt_priority(sgi_intid, 0);
-        gic.enable_interrupt(sgi_intid, true).unwrap();
-        gic.set_trigger(sgi_intid, arm_gic::Trigger::Edge);
     });
 
     UART_DRIVER.lock_irq(|uart| uart.borrow_mut().init());
@@ -146,37 +147,27 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     info!("Hello World!");
 
-    // arm_gic::irq_enable();
+    arm_gic::irq_disable();
 
-    let intruder_state: usize = 1;
+    start_core::<IntruderEntryImpl>(1);
+    start_core::<IntruderEntryImpl>(2);
+    start_core::<IntruderEntryImpl>(3);
 
-    if intruder_state > 0 {
-        start_core::<IntruderEntryImpl>(1);
+    loop {
+        SysTick::wait_us(1000000);
+
+        GIC_DRIVER.lock_irq(|gic| {
+            let mut gic = gic.borrow_mut();
+
+            gic.send_sgi(
+                INTID_SGI3,
+                SgiTarget::List {
+                    target_list_filter: SgiTargetListFilter::CPUTargetList,
+                    target_list: 0b1110,
+                },
+            );
+        });
     }
-
-    if intruder_state > 1 {
-        start_core::<IntruderEntryImpl>(2);
-    }
-
-    if intruder_state > 2 {
-        start_core::<IntruderEntryImpl>(3);
-    }
-
-    SysTick::wait_us(1000000);
-
-    GIC_DRIVER.lock_irq(|gic| {
-        let mut gic = gic.borrow_mut();
-
-        gic.send_sgi(
-            sgi_intid,
-            SgiTarget::List {
-                target_list_filter: SgiTargetListFilter::CPUTargetList,
-                target_list: 3,
-            },
-        );
-    });
-
-    loop {}
 
     // const WASM_BYTES: &[u8] =
     //     include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
@@ -235,7 +226,7 @@ unsafe fn main(_info: EntryInfo) -> ! {
             fuel: None,
             run_idx,
             refuel_idx: 0,
-            intruder_state,
+            intruder_state: INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire),
             dt,
             df: None,
             acc_t: dt,
@@ -267,6 +258,35 @@ fn start_core<E: Entry>(core_id: u64) {
         }
     }
 }
+
+// fn enable_intruder(state: usize) {
+//     INTRUDER_RUN.store(enable, core::sync::atomic::Ordering::Release);
+
+//     let mut targets = 0;
+//     if state > 0 {
+//         targets |= 0b10;
+//     }
+
+//     if NUM_INTRUDER > 1 {
+//         targets |= 0b100;
+//     }
+
+//     if NUM_INTRUDER > 2 {
+//         targets |= 0b1000;
+//     }
+
+//     GIC_DRIVER.lock_irq(|gic| {
+//         let mut gic = gic.borrow_mut();
+
+//         gic.send_sgi(
+//             INTRUDER_CTRL_INTR,
+//             SgiTarget::List {
+//                 target_list_filter: SgiTargetListFilter::CPUTargetList,
+//                 target_list: targets,
+//             },
+//         );
+//     });
+// }
 
 trait CounterValueExt {
     type T;

@@ -1,4 +1,6 @@
-use core::{arch::asm, cell::RefCell, mem::MaybeUninit, ptr::write_volatile};
+use core::{
+    arch::asm, cell::RefCell, mem::MaybeUninit, ptr::write_volatile, sync::atomic::AtomicBool,
+};
 
 use arm_gic::{IntId, InterruptGroup};
 use arm64::{

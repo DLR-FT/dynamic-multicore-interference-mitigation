@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use spin::{
     RelaxStrategy,
     mutex::{SpinMutex, SpinMutexGuard},
@@ -9,7 +11,8 @@ pub trait SpinMutexExt<T: ?Sized> {
 
 impl<T: ?Sized, R: RelaxStrategy> SpinMutexExt<T> for SpinMutex<T, R> {
     fn lock_irq<X>(&self, f: impl Fn(SpinMutexGuard<'_, T>) -> X) -> X {
-        arm_gic::irq_disable();
+        let daif: u64;
+        unsafe { asm!("mrs {daif}, DAIF", "msr DAIFSet, #0xf", daif = lateout(reg) daif) }
 
         let x;
         {
@@ -17,7 +20,7 @@ impl<T: ?Sized, R: RelaxStrategy> SpinMutexExt<T> for SpinMutex<T, R> {
             x = f(lock);
         }
 
-        arm_gic::irq_enable();
+        unsafe { asm!("msr DAIF, {daif}", daif = in(reg) daif) }
 
         x
     }
