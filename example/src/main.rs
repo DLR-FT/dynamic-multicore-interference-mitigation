@@ -9,7 +9,6 @@ use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 use core::ptr::addr_of;
 use core::slice;
-use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicUsize;
 
 use arm64::arbitrary_int::*;
@@ -22,7 +21,6 @@ use arm64::smccc::*;
 use arm64::*;
 
 use arm_gic::IntId;
-use arm_gic::InterruptGroup;
 use arm_gic::gicv2::SgiTarget;
 use arm_gic::gicv2::SgiTargetListFilter;
 
@@ -30,6 +28,7 @@ use log::error;
 use log::info;
 use log::set_logger;
 use log::set_max_level;
+use log::trace;
 use simple_alloc::SimpleAlloc;
 use spin::Once;
 use spin::mutex::SpinMutex;
@@ -78,7 +77,7 @@ const NORMAL_ATTRS: BlockAttrs = BlockAttrs::DEFAULT
 
 static INTRUDER_STATE: AtomicUsize = AtomicUsize::new(0);
 
-const INTID_SGI3: IntId = IntId::sgi(3);
+const INTRUDER_STOP_INTR: IntId = IntId::sgi(3);
 
 #[entry(exceptions = Excps)]
 unsafe fn main(_info: EntryInfo) -> ! {
@@ -147,27 +146,11 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     info!("Hello World!");
 
-    arm_gic::irq_disable();
-
     start_core::<IntruderEntryImpl>(1);
     start_core::<IntruderEntryImpl>(2);
     start_core::<IntruderEntryImpl>(3);
 
-    loop {
-        SysTick::wait_us(1000000);
-
-        GIC_DRIVER.lock_irq(|gic| {
-            let mut gic = gic.borrow_mut();
-
-            gic.send_sgi(
-                INTID_SGI3,
-                SgiTarget::List {
-                    target_list_filter: SgiTargetListFilter::CPUTargetList,
-                    target_list: 0b1110,
-                },
-            );
-        });
-    }
+    SysTick::wait_us(1000000);
 
     // const WASM_BYTES: &[u8] =
     //     include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
@@ -198,13 +181,11 @@ unsafe fn main(_info: EntryInfo) -> ! {
         let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
         unsafe { ALLOCATOR.init(heap_buf) };
 
-        // wasm_runner.run(0);
-
         PMU::reset();
         PMU::start();
         let last = SysTick::get_time_us();
 
-        // wasm_payload::kernel::run::<256, 256, 256, 256>();
+        wasm_payload::kernel::run::<256, 256, 256, 256>();
 
         let current = SysTick::get_time_us();
         PMU::stop();
@@ -237,9 +218,18 @@ unsafe fn main(_info: EntryInfo) -> ! {
         let buf = &mut [0u8; 1024];
         let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
         buf[n] = '\n' as u8;
-        // UartWriter::write_bytes(&buf[..n + 1]).unwrap();
+        logger.write_bytes(&buf[..n + 1]);
 
         run_idx += 1;
+
+        let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
+        if state == 0 {
+            state = 3;
+        } else {
+            state = 0;
+        }
+
+        enable_intruders(state);
     }
 }
 
@@ -259,34 +249,29 @@ fn start_core<E: Entry>(core_id: u64) {
     }
 }
 
-// fn enable_intruder(state: usize) {
-//     INTRUDER_RUN.store(enable, core::sync::atomic::Ordering::Release);
+fn enable_intruders(state: usize) {
+    let last_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
 
-//     let mut targets = 0;
-//     if state > 0 {
-//         targets |= 0b10;
-//     }
+    // trace!("intruder state: {} -> {}", last_state, state);
 
-//     if NUM_INTRUDER > 1 {
-//         targets |= 0b100;
-//     }
+    let mut targets = 0;
+    for x in state..last_state {
+        targets |= 1 << (x + 1);
+    }
 
-//     if NUM_INTRUDER > 2 {
-//         targets |= 0b1000;
-//     }
+    INTRUDER_STATE.store(state, core::sync::atomic::Ordering::Release);
+    GIC_DRIVER.lock_irq(|gic| {
+        let mut gic = gic.borrow_mut();
 
-//     GIC_DRIVER.lock_irq(|gic| {
-//         let mut gic = gic.borrow_mut();
-
-//         gic.send_sgi(
-//             INTRUDER_CTRL_INTR,
-//             SgiTarget::List {
-//                 target_list_filter: SgiTargetListFilter::CPUTargetList,
-//                 target_list: targets,
-//             },
-//         );
-//     });
-// }
+        gic.send_sgi(
+            INTRUDER_STOP_INTR,
+            SgiTarget::List {
+                target_list_filter: SgiTargetListFilter::CPUTargetList,
+                target_list: targets,
+            },
+        );
+    });
+}
 
 trait CounterValueExt {
     type T;

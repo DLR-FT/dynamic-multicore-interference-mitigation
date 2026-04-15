@@ -1,5 +1,5 @@
 use core::{
-    arch::asm, cell::RefCell, mem::MaybeUninit, ptr::write_volatile, sync::atomic::AtomicBool,
+    arch::asm, cell::RefCell, hint, mem::MaybeUninit, ptr::write_volatile, sync::atomic::AtomicBool,
 };
 
 use arm_gic::{IntId, InterruptGroup};
@@ -11,9 +11,12 @@ use arm64::{
     pmu::PMU,
 };
 
+use log::trace;
 use spin::mutex::SpinMutex;
 
-use crate::{DEVICE_ATTRS, NORMAL_ATTRS, plat::GIC_DRIVER, spin_utils::SpinMutexExt};
+use crate::{
+    DEVICE_ATTRS, INTRUDER_STATE, NORMAL_ATTRS, plat::GIC_DRIVER, spin_utils::SpinMutexExt,
+};
 
 static CORE1_L0TABLE: SpinMutex<RefCell<TranslationTable<Level0>>> =
     SpinMutex::new(RefCell::new(TranslationTable::DEFAULT));
@@ -145,6 +148,13 @@ unsafe fn intruder_main(info: EntryInfo) -> u8 {
     PMU::setup_counter(3, arm64::pmu::Event::L2D_CACHE);
     PMU::setup_counter(4, arm64::pmu::Event::L2D_CACHE_WB);
     PMU::setup_counter(5, arm64::pmu::Event::L2D_CACHE_REFILL);
+
+    loop {
+        let state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
+        if state > info.cpu_idx {
+            break;
+        }
+    }
 
     loop {
         let buf = unsafe { &mut FOO[info.cpu_idx - 1].0 };
