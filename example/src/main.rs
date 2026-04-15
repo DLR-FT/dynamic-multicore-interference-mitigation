@@ -223,8 +223,8 @@ unsafe fn main(_info: EntryInfo) -> ! {
         run_idx += 1;
 
         let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-        if state == 0 {
-            state = 3;
+        if state < 3 {
+            state += 1;
         } else {
             state = 0;
         }
