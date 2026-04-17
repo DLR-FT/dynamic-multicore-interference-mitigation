@@ -1,7 +1,6 @@
 use core::arch::asm;
 
 use arm64::exceptions::*;
-use log::trace;
 
 use crate::{INTRUDER_STATE, plat::GIC_DRIVER, spin_utils::SpinMutexExt};
 pub struct Excps;
@@ -36,7 +35,7 @@ impl Exceptions<ELx_SP_ELx> for Excps {
             gic.end_interrupt(intid, arm_gic::InterruptGroup::Group0);
         });
 
-        // trace!("stop intruder mpidr: {}", mpidr);
+        // info!("stop intruder mpidr: {}", mpidr);
 
         loop {
             let state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
@@ -45,7 +44,7 @@ impl Exceptions<ELx_SP_ELx> for Excps {
             }
         }
 
-        // trace!("continue intruder mpidr: {}", mpidr);
+        // info!("continue intruder mpidr: {}", mpidr);
     }
 }
 

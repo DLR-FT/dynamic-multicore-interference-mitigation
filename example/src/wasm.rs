@@ -4,7 +4,7 @@ use analyzer::{PMUInfo, RefuelUpdate};
 use arm64::pmu::{self, PMU};
 use wasm::{ExternVal, HaltExecutionError, Value, resumable};
 
-use crate::{CounterValueExt, systick::SysTick};
+use crate::{CounterValueExt, plat::UART_DRIVER, systick::SysTick, uart_ext::BufWrite};
 
 pub struct WasmRunner<'wasm> {
     pub fuel_amount: Option<u32>,
@@ -14,7 +14,7 @@ pub struct WasmRunner<'wasm> {
     wasm_bytes: &'wasm [u8],
 }
 
-impl<'wasm> WasmRunner<'wasm> {
+impl<'wasm, 'log> WasmRunner<'wasm> {
     pub fn new(wasm_bytes: &'wasm [u8], fuel_amount: Option<u32>) -> Self {
         Self {
             fuel_amount,
@@ -121,7 +121,7 @@ impl<'wasm> WasmRunner<'wasm> {
                     let buf = &mut [0u8; 1024];
                     let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
                     buf[n] = '\n' as u8;
-                    // UartWriter::write_bytes(&buf[..n + 1]).unwrap();
+                    UART_DRIVER.write_bytes(&buf[..n + 1]);
 
                     store
                         .access_fuel_mut(&mut resumable_ref, |f| {
@@ -164,7 +164,7 @@ impl<'wasm> WasmRunner<'wasm> {
                     let buf = &mut [0u8; 1024];
                     let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
                     buf[n] = '\n' as u8;
-                    // UartWriter::write_bytes(&buf[..n + 1]).unwrap();
+                    UART_DRIVER.write_bytes(&buf[..n + 1]);
 
                     break;
                 }

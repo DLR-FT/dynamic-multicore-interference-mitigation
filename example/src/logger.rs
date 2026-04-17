@@ -19,20 +19,6 @@ where
     }
 }
 
-impl<'a, DRIVER> Logger<'a, DRIVER>
-where
-    DRIVER: Send + embedded_hal_nb::serial::Write<Error = Infallible>,
-{
-    pub fn write_bytes(&self, buf: &[u8]) {
-        self.uart.lock_irq(|uart| {
-            let uart = &mut *uart.borrow_mut() as &mut dyn serial::Write<_, Error = Infallible>;
-            for b in buf {
-                uart.write(*b).unwrap();
-            }
-        });
-    }
-}
-
 impl<'a, DRIVER> Log for Logger<'a, DRIVER>
 where
     DRIVER: Send + embedded_hal_nb::serial::Write<Error = Infallible>,

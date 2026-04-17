@@ -24,17 +24,15 @@ use arm_gic::IntId;
 use arm_gic::gicv2::SgiTarget;
 use arm_gic::gicv2::SgiTargetListFilter;
 
+use spin::Once;
+use spin::mutex::SpinMutex;
+
 use log::error;
 use log::info;
 use log::set_logger;
 use log::set_max_level;
-use log::trace;
-use simple_alloc::SimpleAlloc;
-use spin::Once;
-use spin::mutex::SpinMutex;
 
-use analyzer::PMUInfo;
-use analyzer::RefuelUpdate;
+use simple_alloc::SimpleAlloc;
 
 mod excps;
 mod intruder;
@@ -42,15 +40,16 @@ mod logger;
 mod plat;
 mod spin_utils;
 mod systick;
+mod uart_ext;
 mod wasm;
 
 use excps::*;
+use intruder::*;
 use logger::*;
 use plat::*;
-use spin_utils::SpinMutexExt;
-
-use crate::intruder::IntruderEntryImpl;
-use crate::systick::SysTick;
+use spin_utils::*;
+use systick::*;
+use wasm::*;
 
 #[global_allocator]
 pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
@@ -142,7 +141,7 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     let logger = LOGGER.call_once(|| Logger::new(&UART_DRIVER));
     set_logger(logger).unwrap();
-    set_max_level(log::LevelFilter::Trace);
+    set_max_level(log::LevelFilter::Info);
 
     info!("Hello World!");
 
@@ -152,10 +151,10 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     SysTick::wait_us(1000000);
 
-    // const WASM_BYTES: &[u8] =
-    //     include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
+    const WASM_BYTES: &[u8] =
+        include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
-    // let mut wasm_runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
+    let mut wasm_runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
 
     PMU::enable();
 
@@ -167,7 +166,7 @@ unsafe fn main(_info: EntryInfo) -> ! {
     PMU::setup_counter(4, pmu::Event::L2D_CACHE_WB);
     PMU::setup_counter(5, pmu::Event::L2D_CACHE_REFILL);
 
-    let mut run_idx = 0;
+    // let mut run_idx = 0;
 
     loop {
         unsafe extern "C" {
@@ -181,46 +180,49 @@ unsafe fn main(_info: EntryInfo) -> ! {
         let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
         unsafe { ALLOCATOR.init(heap_buf) };
 
-        PMU::reset();
-        PMU::start();
-        let last = SysTick::get_time_us();
+        let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
+        wasm_runner.run(intruder_state);
 
-        wasm_payload::kernel::run::<256, 256, 256, 256>();
+        // PMU::reset();
+        // PMU::start();
+        // let last = SysTick::get_time_us();
 
-        let current = SysTick::get_time_us();
-        PMU::stop();
+        // wasm_payload::kernel::run::<256, 256, 256, 256>();
 
-        let dt = current - last;
+        // let current = SysTick::get_time_us();
+        // PMU::stop();
 
-        let pmu_info = PMUInfo {
-            l1d_access: PMU::get_counter(0).ok(),
-            l1d_wb: PMU::get_counter(1).ok(),
-            l1d_refill: PMU::get_counter(2).ok(),
+        // let dt = current - last;
 
-            l2d_access: PMU::get_counter(3).ok(),
-            l2d_wb: PMU::get_counter(4).ok(),
-            l2d_refill: PMU::get_counter(5).ok(),
-        };
+        // let pmu_info = PMUInfo {
+        //     l1d_access: PMU::get_counter(0).ok(),
+        //     l1d_wb: PMU::get_counter(1).ok(),
+        //     l1d_refill: PMU::get_counter(2).ok(),
 
-        let update = RefuelUpdate {
-            timestamp: current,
-            fuel: None,
-            run_idx,
-            refuel_idx: 0,
-            intruder_state: INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire),
-            dt,
-            df: None,
-            acc_t: dt,
-            acc_f: None,
-            pmu_info: Some(pmu_info),
-        };
+        //     l2d_access: PMU::get_counter(3).ok(),
+        //     l2d_wb: PMU::get_counter(4).ok(),
+        //     l2d_refill: PMU::get_counter(5).ok(),
+        // };
 
-        let buf = &mut [0u8; 1024];
-        let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-        buf[n] = '\n' as u8;
-        logger.write_bytes(&buf[..n + 1]);
+        // let update = RefuelUpdate {
+        //     timestamp: current,
+        //     fuel: None,
+        //     run_idx,
+        //     refuel_idx: 0,
+        //     intruder_state: INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire),
+        //     dt,
+        //     df: None,
+        //     acc_t: dt,
+        //     acc_f: None,
+        //     pmu_info: Some(pmu_info),
+        // };
 
-        run_idx += 1;
+        // let buf = &mut [0u8; 1024];
+        // let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
+        // buf[n] = '\n' as u8;
+        // logger.write_bytes(&buf[..n + 1]);
+
+        // run_idx += 1;
 
         let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
         if state < 3 {
@@ -252,7 +254,7 @@ fn start_core<E: Entry>(core_id: u64) {
 fn enable_intruders(state: usize) {
     let last_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
 
-    // trace!("intruder state: {} -> {}", last_state, state);
+    // info!("intruder state: {} -> {}", last_state, state);
 
     let mut targets = 0;
     for x in state..last_state {

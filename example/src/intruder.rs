@@ -1,6 +1,4 @@
-use core::{
-    arch::asm, cell::RefCell, hint, mem::MaybeUninit, ptr::write_volatile, sync::atomic::AtomicBool,
-};
+use core::{arch::asm, cell::RefCell, mem::MaybeUninit, ptr::write_volatile};
 
 use arm_gic::{IntId, InterruptGroup};
 use arm64::{
@@ -11,7 +9,6 @@ use arm64::{
     pmu::PMU,
 };
 
-use log::trace;
 use spin::mutex::SpinMutex;
 
 use crate::{
@@ -47,16 +44,16 @@ impl Entry for IntruderEntryImpl {
     }
 }
 
-const FOO_LEN: usize = 1024 * 1024;
-static mut FOO: [CacheBuf; 3] = [CacheBuf::uninit(); 3];
+const CACHE_SIZE: usize = 1024 * 1024;
+static mut CACHE_BUFS: [CacheBuf; 3] = [CacheBuf::uninit(); 3];
 
 #[derive(Clone, Copy)]
 #[repr(align(0x0010_0000))]
-struct CacheBuf([MaybeUninit<u8>; FOO_LEN]);
+struct CacheBuf([MaybeUninit<u8>; CACHE_SIZE]);
 
 impl CacheBuf {
     pub const fn uninit() -> Self {
-        Self([MaybeUninit::uninit(); FOO_LEN])
+        Self([MaybeUninit::uninit(); CACHE_SIZE])
     }
 }
 
@@ -157,14 +154,14 @@ unsafe fn intruder_main(info: EntryInfo) -> u8 {
     }
 
     loop {
-        let buf = unsafe { &mut FOO[info.cpu_idx - 1].0 };
+        let buf = unsafe { &mut CACHE_BUFS[info.cpu_idx - 1].0 };
 
         const N: usize = 16;
         const CACHE_LINE_LEN: usize = 64;
-        const STRIDE: usize = FOO_LEN / N;
+        const STRIDE: usize = CACHE_SIZE / N;
 
         for i in (0..STRIDE).step_by(CACHE_LINE_LEN) {
-            for j in (0..FOO_LEN).step_by(STRIDE) {
+            for j in (0..CACHE_SIZE).step_by(STRIDE) {
                 let x: u64;
                 unsafe { asm!("mrs {x}, CNTPCT_EL0", x = lateout(reg) x) }
                 unsafe { write_volatile(&mut buf[i + j] as *const _ as *mut u8, x as u8) }
