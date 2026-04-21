@@ -11,6 +11,8 @@ use core::ptr::addr_of;
 use core::slice;
 use core::sync::atomic::AtomicUsize;
 
+use analyzer::PMUInfo;
+use analyzer::RefuelUpdate;
 use arm64::arbitrary_int::*;
 use arm64::cache::*;
 use arm64::mmu::*;
@@ -50,6 +52,8 @@ use plat::*;
 use spin_utils::*;
 use systick::*;
 use wasm::*;
+
+use crate::uart_ext::BufWrite;
 
 #[global_allocator]
 pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
@@ -151,10 +155,10 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     SysTick::wait_us(1000000);
 
-    const WASM_BYTES: &[u8] =
-        include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
+    // const WASM_BYTES: &[u8] =
+    //     include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
-    let mut wasm_runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
+    // let mut wasm_runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
 
     PMU::enable();
 
@@ -166,7 +170,7 @@ unsafe fn main(_info: EntryInfo) -> ! {
     PMU::setup_counter(4, pmu::Event::L2D_CACHE_WB);
     PMU::setup_counter(5, pmu::Event::L2D_CACHE_REFILL);
 
-    // let mut run_idx = 0;
+    let mut run_idx = 0;
 
     loop {
         unsafe extern "C" {
@@ -180,49 +184,49 @@ unsafe fn main(_info: EntryInfo) -> ! {
         let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
         unsafe { ALLOCATOR.init(heap_buf) };
 
-        let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-        wasm_runner.run(intruder_state);
+        // let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
+        // wasm_runner.run(intruder_state);
 
-        // PMU::reset();
-        // PMU::start();
-        // let last = SysTick::get_time_us();
+        PMU::reset();
+        PMU::start();
+        let last = SysTick::get_time_us();
 
-        // wasm_payload::kernel::run::<256, 256, 256, 256>();
+        wasm_payload::kernel::run::<256, 256, 256, 256>();
 
-        // let current = SysTick::get_time_us();
-        // PMU::stop();
+        let current = SysTick::get_time_us();
+        PMU::stop();
 
-        // let dt = current - last;
+        let dt = current - last;
 
-        // let pmu_info = PMUInfo {
-        //     l1d_access: PMU::get_counter(0).ok(),
-        //     l1d_wb: PMU::get_counter(1).ok(),
-        //     l1d_refill: PMU::get_counter(2).ok(),
+        let pmu_info = PMUInfo {
+            l1d_access: PMU::get_counter(0).ok(),
+            l1d_wb: PMU::get_counter(1).ok(),
+            l1d_refill: PMU::get_counter(2).ok(),
 
-        //     l2d_access: PMU::get_counter(3).ok(),
-        //     l2d_wb: PMU::get_counter(4).ok(),
-        //     l2d_refill: PMU::get_counter(5).ok(),
-        // };
+            l2d_access: PMU::get_counter(3).ok(),
+            l2d_wb: PMU::get_counter(4).ok(),
+            l2d_refill: PMU::get_counter(5).ok(),
+        };
 
-        // let update = RefuelUpdate {
-        //     timestamp: current,
-        //     fuel: None,
-        //     run_idx,
-        //     refuel_idx: 0,
-        //     intruder_state: INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire),
-        //     dt,
-        //     df: None,
-        //     acc_t: dt,
-        //     acc_f: None,
-        //     pmu_info: Some(pmu_info),
-        // };
+        let update = RefuelUpdate {
+            timestamp: current,
+            fuel: None,
+            run_idx,
+            refuel_idx: 0,
+            intruder_state: INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire),
+            dt,
+            df: None,
+            acc_t: dt,
+            acc_f: None,
+            pmu_info: Some(pmu_info),
+        };
 
-        // let buf = &mut [0u8; 1024];
-        // let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-        // buf[n] = '\n' as u8;
-        // logger.write_bytes(&buf[..n + 1]);
+        let buf = &mut [0u8; 1024];
+        let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
+        buf[n] = '\n' as u8;
+        UART_DRIVER.write_bytes(&buf[..n + 1]);
 
-        // run_idx += 1;
+        run_idx += 1;
 
         let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
         if state < 3 {
