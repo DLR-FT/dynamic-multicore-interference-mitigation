@@ -6,6 +6,8 @@ extern crate alloc;
 
 use core::cell::RefCell;
 use core::mem::MaybeUninit;
+use core::ops::BitOr;
+use core::ops::Shl;
 use core::panic::PanicInfo;
 use core::ptr::addr_of;
 use core::slice;
@@ -39,21 +41,20 @@ use simple_alloc::SimpleAlloc;
 mod excps;
 mod intruder;
 mod logger;
+mod native_runner;
 mod plat;
 mod spin_utils;
 mod systick;
 mod uart_ext;
-mod wasm;
+mod wasm_runner;
 
 use excps::*;
 use intruder::*;
 use logger::*;
+use native_runner::*;
 use plat::*;
 use spin_utils::*;
 use systick::*;
-use wasm::*;
-
-use crate::uart_ext::BufWrite;
 
 #[global_allocator]
 pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
@@ -155,22 +156,11 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     SysTick::wait_us(1000000);
 
-    // const WASM_BYTES: &[u8] =
-    //     include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
+    const WASM_BYTES: &[u8] =
+        include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
-    // let mut wasm_runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
-
-    PMU::enable();
-
-    PMU::setup_counter(0, pmu::Event::L1D_CACHE);
-    PMU::setup_counter(1, pmu::Event::L1D_CACHE_WB);
-    PMU::setup_counter(2, pmu::Event::L1D_CACHE_REFILL);
-
-    PMU::setup_counter(3, pmu::Event::L2D_CACHE);
-    PMU::setup_counter(4, pmu::Event::L2D_CACHE_WB);
-    PMU::setup_counter(5, pmu::Event::L2D_CACHE_REFILL);
-
-    let mut run_idx = 0;
+    let mut runner = NativeRunner::new();
+    // let mut runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
 
     loop {
         unsafe extern "C" {
@@ -184,49 +174,8 @@ unsafe fn main(_info: EntryInfo) -> ! {
         let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
         unsafe { ALLOCATOR.init(heap_buf) };
 
-        // let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-        // wasm_runner.run(intruder_state);
-
-        PMU::reset();
-        PMU::start();
-        let last = SysTick::get_time_us();
-
-        wasm_payload::kernel::run::<256, 256, 256, 256>();
-
-        let current = SysTick::get_time_us();
-        PMU::stop();
-
-        let dt = current - last;
-
-        let pmu_info = PMUInfo {
-            l1d_access: PMU::get_counter(0).ok(),
-            l1d_wb: PMU::get_counter(1).ok(),
-            l1d_refill: PMU::get_counter(2).ok(),
-
-            l2d_access: PMU::get_counter(3).ok(),
-            l2d_wb: PMU::get_counter(4).ok(),
-            l2d_refill: PMU::get_counter(5).ok(),
-        };
-
-        let update = RefuelUpdate {
-            timestamp: current,
-            fuel: None,
-            run_idx,
-            refuel_idx: 0,
-            intruder_state: INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire),
-            dt,
-            df: None,
-            acc_t: dt,
-            acc_f: None,
-            pmu_info: Some(pmu_info),
-        };
-
-        let buf = &mut [0u8; 1024];
-        let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-        buf[n] = '\n' as u8;
-        UART_DRIVER.write_bytes(&buf[..n + 1]);
-
-        run_idx += 1;
+        let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
+        runner.run(intruder_state);
 
         let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
         if state < 3 {
@@ -282,6 +231,11 @@ fn enable_intruders(state: usize) {
 trait CounterValueExt {
     type T;
     fn ok(self) -> Option<Self::T>;
+    fn chain<U>(self, upper: Self) -> CounterValue<U>
+    where
+        Self::T: Into<U>,
+        U: Shl<usize, Output = U>,
+        U: BitOr<Output = U>;
 }
 
 impl<T> CounterValueExt for CounterValue<T> {
@@ -292,6 +246,25 @@ impl<T> CounterValueExt for CounterValue<T> {
             CounterValue::Ok(x) => Some(x),
             CounterValue::Overflowed(_) => None,
         }
+    }
+
+    fn chain<U>(self, upper: Self) -> CounterValue<U>
+    where
+        T: Into<U>,
+        U: Shl<usize, Output = U>,
+        U: BitOr<Output = U>,
+    {
+        let upper = match upper {
+            CounterValue::Overflowed(cnt) => return CounterValue::Overflowed(cnt.into()),
+            CounterValue::Ok(cnt) => cnt.into(),
+        };
+
+        let lower = match self {
+            CounterValue::Overflowed(cnt) => cnt.into(),
+            CounterValue::Ok(cnt) => cnt.into(),
+        };
+
+        CounterValue::Ok((upper << 32) | lower)
     }
 }
 

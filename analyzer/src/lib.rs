@@ -19,10 +19,12 @@ pub struct RefuelUpdate {
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub struct PMUInfo {
+    pub cycles: Option<u64>,
+    pub instr: Option<u64>,
+
     pub l1d_access: Option<u32>,
     pub l1d_wb: Option<u32>,
     pub l1d_refill: Option<u32>,
-
     pub l2d_access: Option<u32>,
     pub l2d_wb: Option<u32>,
     pub l2d_refill: Option<u32>,

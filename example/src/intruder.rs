@@ -11,8 +11,12 @@ use arm64::{
 
 use spin::mutex::SpinMutex;
 
+use log::error;
+use log::info;
+
 use crate::{
-    DEVICE_ATTRS, INTRUDER_STATE, NORMAL_ATTRS, plat::GIC_DRIVER, spin_utils::SpinMutexExt,
+    CounterValueExt, DEVICE_ATTRS, INTRUDER_STATE, NORMAL_ATTRS, plat::GIC_DRIVER,
+    spin_utils::SpinMutexExt,
 };
 
 static CORE1_L0TABLE: SpinMutex<RefCell<TranslationTable<Level0>>> =
@@ -138,16 +142,6 @@ unsafe fn intruder_main(info: EntryInfo) -> u8 {
     });
 
     arm_gic::irq_enable();
-
-    PMU::enable();
-
-    PMU::setup_counter(0, arm64::pmu::Event::L1D_CACHE);
-    PMU::setup_counter(1, arm64::pmu::Event::L1D_CACHE_WB);
-    PMU::setup_counter(2, arm64::pmu::Event::L1D_CACHE_REFILL);
-
-    PMU::setup_counter(3, arm64::pmu::Event::L2D_CACHE);
-    PMU::setup_counter(4, arm64::pmu::Event::L2D_CACHE_WB);
-    PMU::setup_counter(5, arm64::pmu::Event::L2D_CACHE_REFILL);
 
     loop {
         let state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
