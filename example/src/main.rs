@@ -323,8 +323,6 @@ impl<'a, 'stm> Write for StmWriter<'a, 'stm> {
             }
 
             stm.write_u8(self.port, StmType::G_FLAG, 0);
-
-            // stm.write_u8(self.port, StmType::G_DTS, buf[buf.len() - 1] as u8);
         });
 
         Ok(buf.len())
