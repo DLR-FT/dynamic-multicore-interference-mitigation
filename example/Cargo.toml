@@ -37,6 +37,7 @@ spin = { workspace = true }
 
 serde-json-core = { version = "0.6.0", default-features = false }
 
+embedded-io = "0.7.1"
 embedded-hal-nb = "1.0.0"
 sel4-pl011-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }
 sel4-zynqmp-xuartps-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }

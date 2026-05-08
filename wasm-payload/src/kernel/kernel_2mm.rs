@@ -53,9 +53,8 @@ fn kernel<const NI: usize, const NJ: usize, const NK: usize, const NL: usize>(
     }
     for i in 0..ni {
         for j in 0..nl {
-            d[i][j] *= beta;
             for k in 0..nj {
-                d[i][j] = d[i][j].wrapping_add(tmp[i][k].wrapping_mul(c[k][j]));
+                d[i][j] = d[i][j].wrapping_add(beta.wrapping_mul(tmp[i][k].wrapping_mul(c[k][j])));
             }
         }
     }

@@ -29,8 +29,18 @@ Analyzer.PortSize AUTO
 TPIU.PortSize 32
 TPIU.PortMode Continuous
 
-ETM.TImeMode CycleAccurate+External
-ETM.Clock 1050MHz
-ETM.Trace ON
-ETM.ON
+; ETM.TImeMode CycleAccurate+External
+; ETM.Clock 1050MHz
+; ETM.Trace ON
+; ETM.ON
+
+STMTrace.METHOD Analyzer
+SystemTrace.METHOD Analyzer
+STMTrace.AutoArm  ON
+STMTrace.AutoInit ON
+STM.TimeStamps ON
+STM.PrintfTraceFormat Kernel
+STM.ON
+
+STMTrace.Init
 

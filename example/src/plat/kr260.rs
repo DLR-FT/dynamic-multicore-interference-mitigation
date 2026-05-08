@@ -20,3 +20,6 @@ pub static GIC_DRIVER: Lazy<SpinMutex<RefCell<GicV2>>> = Lazy::new(|| {
 pub static UART_DRIVER: SpinMutex<RefCell<uart::Driver>> = SpinMutex::new(RefCell::new(unsafe {
     uart::Driver::new_uninit(0xFF01_0000 as *mut _)
 }));
+
+pub static STM_DRIVER: SpinMutex<RefCell<Stm>> =
+    SpinMutex::new(RefCell::new(Stm::new(NonNull::new(0xF800_0000 as _))));

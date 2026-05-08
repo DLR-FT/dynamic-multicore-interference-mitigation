@@ -5,10 +5,12 @@
 extern crate alloc;
 
 use core::cell::RefCell;
+use core::convert::Infallible;
 use core::mem::MaybeUninit;
 use core::ops::BitOr;
 use core::ops::Shl;
 use core::panic::PanicInfo;
+use core::ptr::NonNull;
 use core::ptr::addr_of;
 use core::slice;
 use core::sync::atomic::AtomicUsize;
@@ -22,12 +24,15 @@ use arm64::pmu::CounterValue;
 use arm64::pmu::PMU;
 use arm64::psci::*;
 use arm64::smccc::*;
+use arm64::stm::*;
 use arm64::*;
 
 use arm_gic::IntId;
 use arm_gic::gicv2::SgiTarget;
 use arm_gic::gicv2::SgiTargetListFilter;
 
+use embedded_io::ErrorType;
+use embedded_io::Write;
 use spin::Once;
 use spin::mutex::SpinMutex;
 
@@ -54,6 +59,7 @@ use logger::*;
 use native_runner::*;
 use plat::*;
 use spin_utils::*;
+use stm::*;
 use systick::*;
 
 #[global_allocator]
@@ -148,6 +154,8 @@ unsafe fn main(_info: EntryInfo) -> ! {
     set_logger(logger).unwrap();
     set_max_level(log::LevelFilter::Info);
 
+    let mut stm_writer = StmWriter::new(0, &STM_DRIVER);
+
     info!("Hello World!");
 
     start_core::<IntruderEntryImpl>(1);
@@ -156,8 +164,16 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     SysTick::wait_us(1000000);
 
-    const WASM_BYTES: &[u8] =
-        include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
+    // loop {
+    //     stm_writer.write_fmt(format_args!(
+    //         "fooxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxbar"
+    //     ));
+
+    //     SysTick::wait_us(1000);
+    // }
+
+    // const WASM_BYTES: &[u8] =
+    //     include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
     let mut runner = NativeRunner::new();
     // let mut runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
@@ -175,7 +191,7 @@ unsafe fn main(_info: EntryInfo) -> ! {
         unsafe { ALLOCATOR.init(heap_buf) };
 
         let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-        runner.run(intruder_state);
+        runner.run(intruder_state, &mut stm_writer);
 
         let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
         if state < 3 {
@@ -276,3 +292,61 @@ fn panic(info: &PanicInfo) -> ! {
         unsafe { core::arch::asm!("nop") };
     }
 }
+
+pub struct StmWriter<'a, 'stm> {
+    port: u16,
+    stm: &'a SpinMutex<RefCell<Stm<'stm>>>,
+}
+
+impl<'a, 'stm> StmWriter<'a, 'stm> {
+    pub fn new(port: u16, stm: &'a SpinMutex<RefCell<Stm<'stm>>>) -> Self {
+        Self { port, stm }
+    }
+}
+
+impl<'a, 'stm> ErrorType for StmWriter<'a, 'stm> {
+    type Error = Infallible;
+}
+
+impl<'a, 'stm> Write for StmWriter<'a, 'stm> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+        if buf.len() == 0 {
+            return Ok(0);
+        }
+
+        self.stm.lock_irq(|stm| {
+            let mut stm = stm.borrow_mut();
+
+            stm.write_u8(self.port, StmType::G_DTS, buf[0]);
+            for b in buf[1..].iter() {
+                stm.write_u8(self.port, StmType::G_D, *b);
+            }
+
+            stm.write_u8(self.port, StmType::G_FLAG, 0);
+
+            // stm.write_u8(self.port, StmType::G_DTS, buf[buf.len() - 1] as u8);
+        });
+
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+// impl<'a, 'stm> Write for StmWriter<'a, 'stm> {
+//     fn write_str(&mut self, s: &str) -> core::fmt::Result {
+//         self.stm.lock_irq(|stm| {
+//             let mut stm = stm.borrow_mut();
+//             let bytes = s.as_bytes();
+//             for b in bytes[..bytes.len() - 1].iter() {
+//                 stm.write_u8(self.port, StmType::G_D, *b);
+//             }
+
+//             stm.write_u8(self.port, StmType::G_DTS, bytes[bytes.len() - 1] as u8);
+//         });
+
+//         Ok(())
+//     }
+// }

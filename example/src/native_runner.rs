@@ -1,7 +1,9 @@
 use analyzer::{PMUInfo, RefuelUpdate};
 use arm64::pmu::{self, PMU};
+use embedded_io::Write;
+use log::info;
 
-use crate::{CounterValueExt, plat::UART_DRIVER, systick::SysTick, uart_ext::BufWrite};
+use crate::{CounterValueExt, plat::UART_DRIVER, spin_utils::SpinMutexExt, systick::SysTick};
 
 pub struct NativeRunner {
     run_idx: usize,
@@ -12,7 +14,7 @@ impl<'log> NativeRunner {
         Self { run_idx: 0 }
     }
 
-    pub fn run(&mut self, intruder_state: usize) {
+    pub fn run(&mut self, intruder_state: usize, mut writer: impl Write) {
         PMU::enable();
 
         // PMU::setup_counter(0, pmu::Event::INST_RETIRED);
@@ -64,10 +66,12 @@ impl<'log> NativeRunner {
             pmu_info: Some(pmu_info),
         };
 
-        let buf = &mut [0u8; 1024];
-        let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-        buf[n] = '\n' as u8;
-        UART_DRIVER.write_bytes(&buf[..n + 1]);
+        // let buf = &mut [0u8; 1024];
+        // let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
+        // writer.write(&buf[..n]);
+
+        let msg = r#"{"timestamp":51659605,"fuel":null,"run_idx":21,"refuel_idx":0,"intruder_state":1,"dt":1067392,"df":null,"acc_t":1067392,"acc_f":null,"pmu_info":{"l1d_access":69402697,"l1d_wb":32955284,"l1d_refill":32955285,"l2d_access":65910570,"l2d_wb":3595641,"l2d_refill":4951161}}"#;
+        writer.write_all(&msg.as_bytes()[..]);
 
         self.run_idx += 1;
     }
