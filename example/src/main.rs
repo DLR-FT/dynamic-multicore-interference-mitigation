@@ -12,11 +12,10 @@ use core::ops::Shl;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
 use core::ptr::addr_of;
+use core::ptr::write_volatile;
 use core::slice;
 use core::sync::atomic::AtomicUsize;
 
-use analyzer::PMUInfo;
-use analyzer::RefuelUpdate;
 use arm64::arbitrary_int::*;
 use arm64::cache::*;
 use arm64::mmu::*;
@@ -42,6 +41,9 @@ use log::set_logger;
 use log::set_max_level;
 
 use simple_alloc::SimpleAlloc;
+
+use analyzer::PMUInfo;
+use analyzer::RefuelUpdate;
 
 mod excps;
 mod intruder;
@@ -90,7 +92,7 @@ static INTRUDER_STATE: AtomicUsize = AtomicUsize::new(0);
 const INTRUDER_STOP_INTR: IntId = IntId::sgi(3);
 
 #[entry(exceptions = Excps)]
-unsafe fn main(_info: EntryInfo) -> ! {
+fn main(_info: EntryInfo) -> ! {
     arm64::sys_regs::CPUACTLR_EL1.modify(|x| {
         x.with_L1RADIS(u2::new(0b11))
             .with_RADIS(u2::new(0b11))
@@ -158,50 +160,48 @@ unsafe fn main(_info: EntryInfo) -> ! {
 
     info!("Hello World!");
 
-    start_core::<IntruderEntryImpl>(1);
-    start_core::<IntruderEntryImpl>(2);
-    start_core::<IntruderEntryImpl>(3);
+    start_core::<SecondaryEntryImpl>(1);
+    start_core::<SecondaryEntryImpl>(2);
+    start_core::<SecondaryEntryImpl>(3);
 
     SysTick::wait_us(1000000);
 
-    // loop {
-    //     stm_writer.write_fmt(format_args!(
-    //         "fooxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxbar"
-    //     ));
-
-    //     SysTick::wait_us(1000);
-    // }
+    loop {
+        stm_writer.write_fmt(format_args!(
+            r#"{{"timestamp":51659605,"fuel":null,"run_idx":21,"refuel_idx":0,"intruder_state":1,"dt":1067392,"df":null,"acc_t":1067392,"acc_f":null,"pmu_info":{{"l1d_access":69402697,"l1d_wb":32955284,"l1d_refill":32955285,"l2d_access":65910570,"l2d_wb":3595641,"l2d_refill":4951161}}}}"#
+        ));
+    }
 
     // const WASM_BYTES: &[u8] =
     //     include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
-    let mut runner = NativeRunner::new();
-    // let mut runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
+    // let mut runner = NativeRunner::new();
+    // // let mut runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
 
-    loop {
-        unsafe extern "C" {
-            static mut __heap_start: MaybeUninit<u8>;
-            static mut __heap_end: MaybeUninit<u8>;
-        }
+    // loop {
+    //     unsafe extern "C" {
+    //         static mut __heap_start: MaybeUninit<u8>;
+    //         static mut __heap_end: MaybeUninit<u8>;
+    //     }
 
-        let heap_start = addr_of!(__heap_start);
-        let heap_end = addr_of!(__heap_end);
+    //     let heap_start = addr_of!(__heap_start);
+    //     let heap_end = addr_of!(__heap_end);
 
-        let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
-        unsafe { ALLOCATOR.init(heap_buf) };
+    //     let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
+    //     unsafe { ALLOCATOR.init(heap_buf) };
 
-        let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-        runner.run(intruder_state, &mut stm_writer);
+    //     let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
+    //     runner.run(intruder_state, &mut stm_writer);
 
-        let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-        if state < 3 {
-            state += 1;
-        } else {
-            state = 0;
-        }
+    //     let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
+    //     if state < 3 {
+    //         state += 1;
+    //     } else {
+    //         state = 0;
+    //     }
 
-        enable_intruders(state);
-    }
+    //     enable_intruders(state);
+    // }
 }
 
 fn start_core<E: Entry>(core_id: u64) {
@@ -348,3 +348,24 @@ impl<'a, 'stm> Write for StmWriter<'a, 'stm> {
 //         Ok(())
 //     }
 // }
+
+fn stm_write_u8(ch: usize, port: usize, typ: usize, data: u8) {
+    unsafe {
+        write_volatile(
+            (0xF800_0000 + 0x1000 * ch + port * 0x100 + typ) as *mut u8,
+            data,
+        );
+    }
+}
+
+fn stm_write_str(ch: usize, port: usize, s: &str) {
+    let bytes = s.as_bytes();
+
+    stm_write_u8(ch, port, 0x10, bytes[0]);
+
+    for b in &bytes[1..] {
+        stm_write_u8(ch, port, 0x18, *b);
+    }
+
+    stm_write_u8(ch, port, 0x68, 123);
+}

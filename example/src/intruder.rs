@@ -1,18 +1,22 @@
 use core::{arch::asm, cell::RefCell, mem::MaybeUninit, ptr::write_volatile};
 
 use arm_gic::{IntId, InterruptGroup};
+use arm64::*;
 use arm64::{
     Entry, EntryInfo,
     arbitrary_int::{u2, u3},
     cache::*,
     mmu::*,
     pmu::PMU,
+    secondary_entry,
 };
 
 use spin::mutex::SpinMutex;
 
 use log::error;
 use log::info;
+
+use crate::Excps;
 
 use crate::{
     CounterValueExt, DEVICE_ATTRS, INTRUDER_STATE, NORMAL_ATTRS, plat::GIC_DRIVER,
@@ -37,17 +41,6 @@ static CORE3_L0TABLE: SpinMutex<RefCell<TranslationTable<Level0>>> =
 static CORE3_L1TABLE: SpinMutex<RefCell<TranslationTable<Level1>>> =
     SpinMutex::new(RefCell::new(TranslationTable::DEFAULT));
 
-pub struct IntruderEntryImpl;
-
-impl Entry for IntruderEntryImpl {
-    unsafe extern "C" fn entry(info: EntryInfo) -> ! {
-        unsafe {
-            intruder_main(info);
-            loop {}
-        }
-    }
-}
-
 const CACHE_LINE_LEN: usize = 64;
 const CACHE_SIZE: usize = 1024 * 1024;
 const CACHE_BUF_SIZE: usize = CACHE_SIZE;
@@ -64,8 +57,8 @@ impl CacheBuf {
     }
 }
 
-#[unsafe(no_mangle)]
-unsafe fn intruder_main(info: EntryInfo) -> u8 {
+#[secondary_entry(exceptions = Excps)]
+fn intruder_main(info: EntryInfo) -> ! {
     arm64::sys_regs::CPUACTLR_EL1.modify(|x| {
         x.with_L1RADIS(u2::new(0b11))
             .with_RADIS(u2::new(0b11))
