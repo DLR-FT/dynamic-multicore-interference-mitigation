@@ -64,6 +64,8 @@ use spin_utils::*;
 use stm::*;
 use systick::*;
 
+use crate::wasm_runner::WasmRunner;
+
 #[global_allocator]
 pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
 
@@ -161,47 +163,57 @@ fn main(_info: EntryInfo) -> ! {
     info!("Hello World!");
 
     start_core::<SecondaryEntryImpl>(1);
-    start_core::<SecondaryEntryImpl>(2);
-    start_core::<SecondaryEntryImpl>(3);
+    // start_core::<SecondaryEntryImpl>(2);
+    // start_core::<SecondaryEntryImpl>(3);
 
     SysTick::wait_us(1000000);
 
-    loop {
-        stm_writer.write_fmt(format_args!(
-            r#"{{"timestamp":51659605,"fuel":null,"run_idx":21,"refuel_idx":0,"intruder_state":1,"dt":1067392,"df":null,"acc_t":1067392,"acc_f":null,"pmu_info":{{"l1d_access":69402697,"l1d_wb":32955284,"l1d_refill":32955285,"l2d_access":65910570,"l2d_wb":3595641,"l2d_refill":4951161}}}}"#
-        ));
-    }
-
-    // const WASM_BYTES: &[u8] =
-    //     include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
+    const WASM_BYTES: &[u8] =
+        include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
     // let mut runner = NativeRunner::new();
-    // // let mut runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
+    let mut runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
 
-    // loop {
-    //     unsafe extern "C" {
-    //         static mut __heap_start: MaybeUninit<u8>;
-    //         static mut __heap_end: MaybeUninit<u8>;
-    //     }
+    // enable_intruders(1);
 
-    //     let heap_start = addr_of!(__heap_start);
-    //     let heap_end = addr_of!(__heap_end);
+    loop {
+        unsafe extern "C" {
+            static mut __heap_start: MaybeUninit<u8>;
+            static mut __heap_end: MaybeUninit<u8>;
+        }
 
-    //     let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
-    //     unsafe { ALLOCATOR.init(heap_buf) };
+        let heap_start = addr_of!(__heap_start);
+        let heap_end = addr_of!(__heap_end);
 
-    //     let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-    //     runner.run(intruder_state, &mut stm_writer);
+        let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
+        unsafe { ALLOCATOR.init(heap_buf) };
 
-    //     let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-    //     if state < 3 {
-    //         state += 1;
-    //     } else {
-    //         state = 0;
-    //     }
+        let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
+        runner.run(intruder_state, &mut stm_writer);
 
-    //     enable_intruders(state);
-    // }
+        unsafe {
+            intruder::SET_MASK = if intruder::SET_MASK == 0x3FF {
+                0x3FE
+            } else if intruder::SET_MASK == 0x3FE {
+                0x3FC
+            } else if intruder::SET_MASK == 0x3FC {
+                0x3F8
+            } else if intruder::SET_MASK == 0x3F8 {
+                0x3F0
+            } else {
+                0x3FF
+            }
+        };
+
+        // let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
+        // if state < 3 {
+        //     state += 1;
+        // } else {
+        //     state = 0;
+        // }
+
+        // enable_intruders(state);
+    }
 }
 
 fn start_core<E: Entry>(core_id: u64) {

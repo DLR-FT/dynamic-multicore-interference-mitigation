@@ -4,7 +4,7 @@ use analyzer::{PMUInfo, RefuelUpdate};
 use arm64::pmu::{self, PMU};
 use wasm::{ExternVal, HaltExecutionError, Value, resumable};
 
-use crate::{CounterValueExt, plat::UART_DRIVER, systick::SysTick, uart_ext::BufWrite};
+use crate::{CounterValueExt, intruder, plat::UART_DRIVER, systick::SysTick, uart_ext::BufWrite};
 
 pub struct WasmRunner<'wasm> {
     pub fuel_amount: Option<u32>,
@@ -60,13 +60,8 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
 
         PMU::setup_counter(0, pmu::Event::INST_RETIRED);
         PMU::setup_counter(1, pmu::Event::CHAIN);
-
-        // PMU::setup_counter(1, pmu::Event::L1D_CACHE);
-        // PMU::setup_counter(2, pmu::Event::L1D_CACHE_WB);
-        // PMU::setup_counter(3, pmu::Event::L1D_CACHE_REFILL);
-
-        PMU::setup_counter(2, pmu::Event::L2D_CACHE);
-        PMU::setup_counter(3, pmu::Event::L2D_CACHE_WB);
+        PMU::setup_counter(2, pmu::Event::L1D_CACHE);
+        PMU::setup_counter(3, pmu::Event::L1D_CACHE_REFILL);
         PMU::setup_counter(4, pmu::Event::L2D_CACHE_REFILL);
 
         let mut refuel_idx = 0;
@@ -89,13 +84,8 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                 cycles: PMU::get_cycle_counter().ok(),
 
                 instr: PMU::get_counter(0).chain(PMU::get_counter(1)).ok(),
-
-                l1d_access: None,
-                l1d_wb: None,
-                l1d_refill: None,
-
-                l2d_access: PMU::get_counter(2).ok(),
-                l2d_wb: PMU::get_counter(3).ok(),
+                l1d_access: PMU::get_counter(2).ok(),
+                l1d_refill: PMU::get_counter(3).ok(),
                 l2d_refill: PMU::get_counter(4).ok(),
             };
 
@@ -118,6 +108,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                         run_idx: self.run_idx,
                         refuel_idx,
                         intruder_state,
+                        set_mask: unsafe { intruder::SET_MASK },
                         dt,
                         df,
                         acc_t,
@@ -161,6 +152,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                         refuel_idx,
                         run_idx: self.run_idx,
                         intruder_state,
+                        set_mask: unsafe { intruder::SET_MASK },
                         dt,
                         df,
                         acc_t,

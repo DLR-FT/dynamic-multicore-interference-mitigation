@@ -9,6 +9,7 @@ pub struct RefuelUpdate {
     pub run_idx: usize,
     pub refuel_idx: usize,
     pub intruder_state: usize,
+    pub set_mask: usize,
     pub dt: u64,
     pub df: Option<u32>,
     pub acc_t: u64,
@@ -23,9 +24,9 @@ pub struct PMUInfo {
     pub instr: Option<u64>,
 
     pub l1d_access: Option<u32>,
-    pub l1d_wb: Option<u32>,
+    // pub l1d_wb: Option<u32>,
     pub l1d_refill: Option<u32>,
-    pub l2d_access: Option<u32>,
-    pub l2d_wb: Option<u32>,
+    // pub l2d_access: Option<u32>,
+    // pub l2d_wb: Option<u32>,
     pub l2d_refill: Option<u32>,
 }

@@ -1,26 +1,23 @@
-use core::{arch::asm, cell::RefCell, mem::MaybeUninit, ptr::write_volatile};
+use core::arch::asm;
+use core::ptr::write_volatile;
+use core::usize;
+use core::{cell::RefCell, mem::MaybeUninit};
 
 use arm_gic::{IntId, InterruptGroup};
-use arm64::*;
 use arm64::{
-    Entry, EntryInfo,
+    EntryInfo,
     arbitrary_int::{u2, u3},
     cache::*,
     mmu::*,
-    pmu::PMU,
     secondary_entry,
 };
 
 use spin::mutex::SpinMutex;
 
-use log::error;
-use log::info;
-
 use crate::Excps;
 
 use crate::{
-    CounterValueExt, DEVICE_ATTRS, INTRUDER_STATE, NORMAL_ATTRS, plat::GIC_DRIVER,
-    spin_utils::SpinMutexExt,
+    DEVICE_ATTRS, INTRUDER_STATE, NORMAL_ATTRS, plat::GIC_DRIVER, spin_utils::SpinMutexExt,
 };
 
 static CORE1_L0TABLE: SpinMutex<RefCell<TranslationTable<Level0>>> =
@@ -41,19 +38,22 @@ static CORE3_L0TABLE: SpinMutex<RefCell<TranslationTable<Level0>>> =
 static CORE3_L1TABLE: SpinMutex<RefCell<TranslationTable<Level1>>> =
     SpinMutex::new(RefCell::new(TranslationTable::DEFAULT));
 
-const CACHE_LINE_LEN: usize = 64;
-const CACHE_SIZE: usize = 1024 * 1024;
-const CACHE_BUF_SIZE: usize = CACHE_SIZE;
+const CACHE_SIZE_BITS: usize = 20;
+const CACHE_LINE_BITS: usize = 6;
+const CACHE_WAYS_BITS: usize = 4;
+const CACHE_SET_BITS: usize = CACHE_SIZE_BITS - (CACHE_LINE_BITS + CACHE_WAYS_BITS);
+const CACHE_TAG_BITS: usize = usize::BITS as usize - (CACHE_SET_BITS + CACHE_LINE_BITS);
 
+pub static mut SET_MASK: usize = 0x3FF;
 static mut CACHE_BUF: [CacheBuf; 3] = [CacheBuf::uninit(); 3];
 
 #[derive(Clone, Copy)]
 #[repr(align(0x0010_0000))]
-struct CacheBuf([MaybeUninit<u8>; CACHE_BUF_SIZE]);
+struct CacheBuf([MaybeUninit<u8>; 1 << CACHE_SIZE_BITS]);
 
 impl CacheBuf {
     pub const fn uninit() -> Self {
-        Self([MaybeUninit::uninit(); CACHE_BUF_SIZE])
+        Self([MaybeUninit::uninit(); 1 << CACHE_SIZE_BITS])
     }
 }
 
@@ -136,25 +136,35 @@ fn intruder_main(info: EntryInfo) -> ! {
 
     arm_gic::irq_enable();
 
-    loop {
-        let state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-        if state > info.cpu_idx {
-            break;
-        }
-    }
+    // loop {
+    //     let state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
+    //     if state > info.cpu_idx {
+    //         break;
+    //     }
+    // }
 
-    loop {
-        let buf = unsafe { &mut CACHE_BUF[info.cpu_idx - 1].0 };
+    const CACHE_SIZE_BITS: usize = 20;
+    const CACHE_LINE_BITS: usize = 6;
+    const CACHE_WAYS_BITS: usize = 4;
+    const CACHE_SET_BITS: usize = CACHE_SIZE_BITS - (CACHE_LINE_BITS + CACHE_WAYS_BITS);
+    const CACHE_TAG_BITS: usize = usize::BITS as usize - (CACHE_SET_BITS + CACHE_LINE_BITS);
 
-        const N: usize = 16;
-        const STRIDE: usize = CACHE_BUF_SIZE / N;
+    // const SET_MASK: usize = 0x3FE;
+    const TAG_MASK: usize = usize::MAX << (CACHE_SET_BITS + CACHE_LINE_BITS);
 
-        for i in (0..STRIDE).step_by(CACHE_LINE_LEN) {
-            for j in (0..CACHE_BUF_SIZE).step_by(STRIDE) {
-                let x: u64;
-                unsafe { asm!("mrs {x}, CNTPCT_EL0", x = lateout(reg) x) }
-                unsafe { write_volatile(&mut buf[i + j] as *const _ as *mut u8, x as u8) }
-            }
+    unsafe {
+        let buf = &mut CACHE_BUF[info.cpu_idx].0;
+
+        let mut i = 0;
+        loop {
+            i = ((i + 1) * 1000003) % (1 << CACHE_SIZE_BITS);
+
+            let mut addr = &mut buf[i] as *mut MaybeUninit<u8>;
+            addr = addr.map_addr(|x| x & (TAG_MASK | (SET_MASK << CACHE_LINE_BITS)));
+
+            let mut x: u64 = 0xDEADC0DE;
+            asm!("mrs {x}, CNTPCT_EL0", x = lateout(reg) x);
+            write_volatile(addr as *mut u8, x as u8);
         }
     }
 }
