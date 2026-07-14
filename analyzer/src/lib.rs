@@ -9,7 +9,7 @@ pub struct RefuelUpdate {
     pub run_idx: usize,
     pub refuel_idx: usize,
     pub intruder_break: bool,
-    pub set_mask: usize,
+    pub intruder_set_mask: usize,
     pub dt: u64,
     pub df: Option<u32>,
     pub acc_t: u64,

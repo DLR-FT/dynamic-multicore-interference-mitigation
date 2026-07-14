@@ -58,7 +58,7 @@ impl<'log> NativeRunner {
             refuel_idx: 0,
             run_idx: self.run_idx,
             intruder_break: INTRUDER_BREAK.load(core::sync::atomic::Ordering::Acquire),
-            set_mask: unsafe { intruder::SET_MASK },
+            intruder_set_mask: unsafe { intruder::SET_MASK },
             dt,
             df: None,
             acc_t: dt,
