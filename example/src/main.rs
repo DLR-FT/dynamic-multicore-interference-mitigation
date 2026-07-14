@@ -41,14 +41,11 @@ mod wasm_runner;
 use excps::*;
 use intruder::*;
 use logger::*;
-use native_runner::*;
 use perf::*;
 use plat::*;
 use spin_utils::*;
 use stm::*;
 use systick::*;
-
-use crate::wasm_runner::WasmRunner;
 
 #[global_allocator]
 pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
@@ -92,8 +89,6 @@ fn main(_info: EntryInfo) -> ! {
         match () {
             #[cfg(feature = "qemu")]
             () => {
-                use arm64::mmu::TableAttrs;
-
                 l0.map_table(0x0000_0000, l1.base_addr() as u64, TableAttrs::DEFAULT);
                 l1.map_block(0x0000_0000, 0x0000_0000, DEVICE_ATTRS);
                 l1.map_block(0x4000_0000, 0x4000_0000, NORMAL_ATTRS);
@@ -111,8 +106,6 @@ fn main(_info: EntryInfo) -> ! {
 
             #[cfg(feature = "kr260")]
             () => {
-                use arm64::mmu::TableAttrs;
-
                 l0.map_table(0x0000_0000, l1.base_addr() as u64, TableAttrs::DEFAULT);
                 l1.map_block(0x0000_0000, 0x0000_0000, NORMAL_ATTRS);
                 l1.map_block(0x4000_0000, 0x4000_0000, NORMAL_ATTRS);
@@ -155,8 +148,8 @@ fn main(_info: EntryInfo) -> ! {
     const WASM_BYTES: &[u8] =
         include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
-    // let mut runner = NativeRunner::new();
-    let mut runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
+    // let mut runner = native_runner::NativeRunner::new();
+    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(u32::MAX));
 
     loop {
         unsafe extern "C" {
