@@ -4,61 +4,45 @@
 
 extern crate alloc;
 
-use core::cell::RefCell;
-use core::convert::Infallible;
-use core::mem::MaybeUninit;
-use core::ops::BitOr;
-use core::ops::Shl;
-use core::panic::PanicInfo;
-use core::ptr::NonNull;
-use core::ptr::addr_of;
-use core::ptr::write_volatile;
-use core::slice;
-use core::sync::atomic::AtomicUsize;
+use core::{cell::RefCell, mem::MaybeUninit, panic::PanicInfo, ptr::addr_of, slice};
 
-use arm64::arbitrary_int::*;
-use arm64::cache::*;
-use arm64::mmu::*;
-use arm64::pmu::CounterValue;
-use arm64::pmu::PMU;
-use arm64::psci::*;
-use arm64::smccc::*;
-use arm64::stm::*;
-use arm64::*;
+use arm64::{
+    Entry, EntryInfo,
+    arbitrary_int::*,
+    cache::{CacheOp, DCache, ICache},
+    entry,
+    mmu::{
+        Access, BlockAttrs, Level0, Level1, MMU, MemoryTyp, SecurityDomain, Shareability,
+        TableAttrs, TranslationTable,
+    },
+    psci::{NodeHwState, Psci},
+    smccc::{SMC, Smccc},
+    start,
+};
 
-use arm_gic::IntId;
-use arm_gic::gicv2::SgiTarget;
-use arm_gic::gicv2::SgiTargetListFilter;
+use spin::{Once, mutex::SpinMutex};
 
-use embedded_io::ErrorType;
-use embedded_io::Write;
-use spin::Once;
-use spin::mutex::SpinMutex;
-
-use log::error;
-use log::info;
-use log::set_logger;
-use log::set_max_level;
+use log::{error, info, set_logger, set_max_level};
 
 use simple_alloc::SimpleAlloc;
-
-use analyzer::PMUInfo;
-use analyzer::RefuelUpdate;
 
 mod excps;
 mod intruder;
 mod logger;
 mod native_runner;
+mod perf;
 mod plat;
 mod spin_utils;
+mod stm;
 mod systick;
-mod uart_ext;
+mod uart;
 mod wasm_runner;
 
 use excps::*;
 use intruder::*;
 use logger::*;
 use native_runner::*;
+use perf::*;
 use plat::*;
 use spin_utils::*;
 use stm::*;
@@ -89,10 +73,6 @@ const NORMAL_ATTRS: BlockAttrs = BlockAttrs::DEFAULT
     .with_access(Access::PrivReadWrite)
     .with_security(SecurityDomain::NonSecure);
 
-static INTRUDER_STATE: AtomicUsize = AtomicUsize::new(0);
-
-const INTRUDER_STOP_INTR: IntId = IntId::sgi(3);
-
 #[entry(exceptions = Excps)]
 fn main(_info: EntryInfo) -> ! {
     arm64::sys_regs::CPUACTLR_EL1.modify(|x| {
@@ -112,6 +92,8 @@ fn main(_info: EntryInfo) -> ! {
         match () {
             #[cfg(feature = "qemu")]
             () => {
+                use arm64::mmu::TableAttrs;
+
                 l0.map_table(0x0000_0000, l1.base_addr() as u64, TableAttrs::DEFAULT);
                 l1.map_block(0x0000_0000, 0x0000_0000, DEVICE_ATTRS);
                 l1.map_block(0x4000_0000, 0x4000_0000, NORMAL_ATTRS);
@@ -129,6 +111,8 @@ fn main(_info: EntryInfo) -> ! {
 
             #[cfg(feature = "kr260")]
             () => {
+                use arm64::mmu::TableAttrs;
+
                 l0.map_table(0x0000_0000, l1.base_addr() as u64, TableAttrs::DEFAULT);
                 l1.map_block(0x0000_0000, 0x0000_0000, NORMAL_ATTRS);
                 l1.map_block(0x4000_0000, 0x4000_0000, NORMAL_ATTRS);
@@ -139,7 +123,7 @@ fn main(_info: EntryInfo) -> ! {
         MMU::enable_el2(l0.base_addr() as u64);
 
         ICache::enable();
-        DCache::enable();
+        ICache::enable();
     }
 
     DCache::op_all(CacheOp::CleanInvalidate);
@@ -174,8 +158,6 @@ fn main(_info: EntryInfo) -> ! {
     // let mut runner = NativeRunner::new();
     let mut runner = WasmRunner::new(WASM_BYTES, Some(u32::MAX));
 
-    // enable_intruders(1);
-
     loop {
         unsafe extern "C" {
             static mut __heap_start: MaybeUninit<u8>;
@@ -188,8 +170,7 @@ fn main(_info: EntryInfo) -> ! {
         let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
         unsafe { ALLOCATOR.init(heap_buf) };
 
-        let intruder_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-        runner.run(intruder_state, &mut stm_writer);
+        runner.run(&mut stm_writer);
 
         unsafe {
             intruder::SET_MASK = if intruder::SET_MASK == 0x3FF {
@@ -204,15 +185,6 @@ fn main(_info: EntryInfo) -> ! {
                 0x3FF
             }
         };
-
-        // let mut state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-        // if state < 3 {
-        //     state += 1;
-        // } else {
-        //     state = 0;
-        // }
-
-        // enable_intruders(state);
     }
 }
 
@@ -232,70 +204,6 @@ fn start_core<E: Entry>(core_id: u64) {
     }
 }
 
-fn enable_intruders(state: usize) {
-    let last_state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-
-    // info!("intruder state: {} -> {}", last_state, state);
-
-    let mut targets = 0;
-    for x in state..last_state {
-        targets |= 1 << (x + 1);
-    }
-
-    INTRUDER_STATE.store(state, core::sync::atomic::Ordering::Release);
-    GIC_DRIVER.lock_irq(|gic| {
-        let mut gic = gic.borrow_mut();
-
-        gic.send_sgi(
-            INTRUDER_STOP_INTR,
-            SgiTarget::List {
-                target_list_filter: SgiTargetListFilter::CPUTargetList,
-                target_list: targets,
-            },
-        );
-    });
-}
-
-trait CounterValueExt {
-    type T;
-    fn ok(self) -> Option<Self::T>;
-    fn chain<U>(self, upper: Self) -> CounterValue<U>
-    where
-        Self::T: Into<U>,
-        U: Shl<usize, Output = U>,
-        U: BitOr<Output = U>;
-}
-
-impl<T> CounterValueExt for CounterValue<T> {
-    type T = T;
-
-    fn ok(self) -> Option<Self::T> {
-        match self {
-            CounterValue::Ok(x) => Some(x),
-            CounterValue::Overflowed(_) => None,
-        }
-    }
-
-    fn chain<U>(self, upper: Self) -> CounterValue<U>
-    where
-        T: Into<U>,
-        U: Shl<usize, Output = U>,
-        U: BitOr<Output = U>,
-    {
-        let upper = match upper {
-            CounterValue::Overflowed(cnt) => return CounterValue::Overflowed(cnt.into()),
-            CounterValue::Ok(cnt) => cnt.into(),
-        };
-
-        let lower = match self {
-            CounterValue::Overflowed(cnt) => cnt.into(),
-            CounterValue::Ok(cnt) => cnt.into(),
-        };
-
-        CounterValue::Ok((upper << 32) | lower)
-    }
-}
-
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     error!("PANIC: {}", info);
@@ -303,81 +211,4 @@ fn panic(info: &PanicInfo) -> ! {
     loop {
         unsafe { core::arch::asm!("nop") };
     }
-}
-
-pub struct StmWriter<'a, 'stm> {
-    port: u16,
-    stm: &'a SpinMutex<RefCell<Stm<'stm>>>,
-}
-
-impl<'a, 'stm> StmWriter<'a, 'stm> {
-    pub fn new(port: u16, stm: &'a SpinMutex<RefCell<Stm<'stm>>>) -> Self {
-        Self { port, stm }
-    }
-}
-
-impl<'a, 'stm> ErrorType for StmWriter<'a, 'stm> {
-    type Error = Infallible;
-}
-
-impl<'a, 'stm> Write for StmWriter<'a, 'stm> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        if buf.len() == 0 {
-            return Ok(0);
-        }
-
-        self.stm.lock_irq(|stm| {
-            let mut stm = stm.borrow_mut();
-
-            stm.write_u8(self.port, StmType::G_DTS, buf[0]);
-            for b in buf[1..].iter() {
-                stm.write_u8(self.port, StmType::G_D, *b);
-            }
-
-            stm.write_u8(self.port, StmType::G_FLAG, 0);
-        });
-
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-// impl<'a, 'stm> Write for StmWriter<'a, 'stm> {
-//     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-//         self.stm.lock_irq(|stm| {
-//             let mut stm = stm.borrow_mut();
-//             let bytes = s.as_bytes();
-//             for b in bytes[..bytes.len() - 1].iter() {
-//                 stm.write_u8(self.port, StmType::G_D, *b);
-//             }
-
-//             stm.write_u8(self.port, StmType::G_DTS, bytes[bytes.len() - 1] as u8);
-//         });
-
-//         Ok(())
-//     }
-// }
-
-fn stm_write_u8(ch: usize, port: usize, typ: usize, data: u8) {
-    unsafe {
-        write_volatile(
-            (0xF800_0000 + 0x1000 * ch + port * 0x100 + typ) as *mut u8,
-            data,
-        );
-    }
-}
-
-fn stm_write_str(ch: usize, port: usize, s: &str) {
-    let bytes = s.as_bytes();
-
-    stm_write_u8(ch, port, 0x10, bytes[0]);
-
-    for b in &bytes[1..] {
-        stm_write_u8(ch, port, 0x18, *b);
-    }
-
-    stm_write_u8(ch, port, 0x68, 123);
 }

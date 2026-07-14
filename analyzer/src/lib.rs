@@ -8,18 +8,18 @@ pub struct RefuelUpdate {
     pub fuel: Option<u32>,
     pub run_idx: usize,
     pub refuel_idx: usize,
-    pub intruder_state: usize,
+    pub intruder_break: bool,
     pub set_mask: usize,
     pub dt: u64,
     pub df: Option<u32>,
     pub acc_t: u64,
     pub acc_f: Option<u32>,
 
-    pub pmu_info: Option<PMUInfo>,
+    pub perf_info: Option<PerfInfo>,
 }
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug)]
-pub struct PMUInfo {
+pub struct PerfInfo {
     pub cycles: Option<u64>,
     pub instr: Option<u64>,
 

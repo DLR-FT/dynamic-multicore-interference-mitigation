@@ -1,9 +1,12 @@
 use core::arch::asm;
 use core::ptr::write_volatile;
+use core::sync::atomic::AtomicBool;
 use core::usize;
 use core::{cell::RefCell, mem::MaybeUninit};
 
+use arm_gic::gicv2::{SgiTarget, SgiTargetListFilter};
 use arm_gic::{IntId, InterruptGroup};
+
 use arm64::{
     EntryInfo,
     arbitrary_int::{u2, u3},
@@ -16,9 +19,7 @@ use spin::mutex::SpinMutex;
 
 use crate::Excps;
 
-use crate::{
-    DEVICE_ATTRS, INTRUDER_STATE, NORMAL_ATTRS, plat::GIC_DRIVER, spin_utils::SpinMutexExt,
-};
+use crate::{DEVICE_ATTRS, NORMAL_ATTRS, plat::GIC_DRIVER, spin_utils::SpinMutexExt};
 
 static CORE1_L0TABLE: SpinMutex<RefCell<TranslationTable<Level0>>> =
     SpinMutex::new(RefCell::new(TranslationTable::DEFAULT));
@@ -47,6 +48,9 @@ const CACHE_TAG_BITS: usize = usize::BITS as usize - (CACHE_SET_BITS + CACHE_LIN
 pub static mut SET_MASK: usize = 0x3FF;
 static mut CACHE_BUF: [CacheBuf; 3] = [CacheBuf::uninit(); 3];
 
+const INTRUDER_BREAK_INTR: IntId = IntId::sgi(3);
+pub static INTRUDER_BREAK: AtomicBool = AtomicBool::new(false);
+
 #[derive(Clone, Copy)]
 #[repr(align(0x0010_0000))]
 struct CacheBuf([MaybeUninit<u8>; 1 << CACHE_SIZE_BITS]);
@@ -55,6 +59,25 @@ impl CacheBuf {
     pub const fn uninit() -> Self {
         Self([MaybeUninit::uninit(); 1 << CACHE_SIZE_BITS])
     }
+}
+
+pub fn intruder_break() {
+    INTRUDER_BREAK.store(true, core::sync::atomic::Ordering::Release);
+    GIC_DRIVER.lock_irq(|gic| {
+        let mut gic = gic.borrow_mut();
+
+        gic.send_sgi(
+            INTRUDER_BREAK_INTR,
+            SgiTarget::List {
+                target_list_filter: SgiTargetListFilter::CPUTargetList,
+                target_list: 0b1110,
+            },
+        );
+    });
+}
+
+pub fn intruder_cont() {
+    INTRUDER_BREAK.store(false, core::sync::atomic::Ordering::Release);
 }
 
 #[secondary_entry(exceptions = Excps)]
@@ -136,20 +159,12 @@ fn intruder_main(info: EntryInfo) -> ! {
 
     arm_gic::irq_enable();
 
-    // loop {
-    //     let state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-    //     if state > info.cpu_idx {
-    //         break;
-    //     }
-    // }
-
     const CACHE_SIZE_BITS: usize = 20;
     const CACHE_LINE_BITS: usize = 6;
     const CACHE_WAYS_BITS: usize = 4;
     const CACHE_SET_BITS: usize = CACHE_SIZE_BITS - (CACHE_LINE_BITS + CACHE_WAYS_BITS);
     const CACHE_TAG_BITS: usize = usize::BITS as usize - (CACHE_SET_BITS + CACHE_LINE_BITS);
 
-    // const SET_MASK: usize = 0x3FE;
     const TAG_MASK: usize = usize::MAX << (CACHE_SET_BITS + CACHE_LINE_BITS);
 
     unsafe {

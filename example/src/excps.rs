@@ -2,7 +2,7 @@ use core::arch::asm;
 
 use arm64::exceptions::*;
 
-use crate::{INTRUDER_STATE, plat::GIC_DRIVER, spin_utils::SpinMutexExt};
+use crate::{intruder::INTRUDER_BREAK, plat::GIC_DRIVER, spin_utils::SpinMutexExt};
 pub struct Excps;
 
 impl Exceptions<ELx_SP_EL0> for Excps {}
@@ -26,25 +26,16 @@ impl Exceptions<ELx_SP_ELx> for Excps {
 
         let Some(intid) = intid else { return };
 
-        let mpidr: u64;
-        unsafe { asm!("mrs {r}, MPIDR_EL1", r = lateout(reg) mpidr) }
-        let mpidr = (mpidr & 0xf) as usize;
-
         GIC_DRIVER.lock_irq(|gic_lock| {
             let mut gic = gic_lock.borrow_mut();
             gic.end_interrupt(intid, arm_gic::InterruptGroup::Group0);
         });
 
-        // info!("stop intruder mpidr: {}", mpidr);
-
         loop {
-            let state = INTRUDER_STATE.load(core::sync::atomic::Ordering::Acquire);
-            if state >= mpidr {
+            if !INTRUDER_BREAK.load(core::sync::atomic::Ordering::Acquire) {
                 break;
             }
         }
-
-        // info!("continue intruder mpidr: {}", mpidr);
     }
 }
 

@@ -1,8 +1,12 @@
-use analyzer::{PMUInfo, RefuelUpdate};
+use analyzer::{PerfInfo, RefuelUpdate};
 use arm64::pmu::{self, PMU};
 use embedded_io::Write;
 
-use crate::{CounterValueExt, intruder, systick::SysTick};
+use crate::{
+    intruder::{self, INTRUDER_BREAK},
+    perf::CounterValueExt,
+    systick::SysTick,
+};
 
 pub struct NativeRunner {
     run_idx: usize,
@@ -13,7 +17,7 @@ impl<'log> NativeRunner {
         Self { run_idx: 0 }
     }
 
-    pub fn run(&mut self, intruder_state: usize, mut writer: impl Write) {
+    pub fn run(&mut self, mut writer: impl Write) {
         PMU::enable();
 
         PMU::setup_counter(0, pmu::Event::INST_RETIRED);
@@ -39,7 +43,7 @@ impl<'log> NativeRunner {
 
         let dt = current - last;
 
-        let pmu_info = PMUInfo {
+        let perf_info = PerfInfo {
             cycles: PMU::get_cycle_counter().ok(),
 
             instr: PMU::get_counter(0).chain(PMU::get_counter(1)).ok(),
@@ -53,13 +57,13 @@ impl<'log> NativeRunner {
             fuel: None,
             refuel_idx: 0,
             run_idx: self.run_idx,
-            intruder_state,
+            intruder_break: INTRUDER_BREAK.load(core::sync::atomic::Ordering::Acquire),
             set_mask: unsafe { intruder::SET_MASK },
             dt,
             df: None,
             acc_t: dt,
             acc_f: None,
-            pmu_info: Some(pmu_info),
+            perf_info: Some(perf_info),
         };
 
         let buf = &mut [0u8; 1024];

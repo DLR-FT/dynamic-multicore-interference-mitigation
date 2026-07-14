@@ -1,10 +1,15 @@
 use alloc::vec::Vec;
 
-use analyzer::{PMUInfo, RefuelUpdate};
+use analyzer::{PerfInfo, RefuelUpdate};
 use arm64::pmu::{self, PMU};
+use embedded_io::Write;
 use wasm::{ExternVal, HaltExecutionError, Value, resumable};
 
-use crate::{CounterValueExt, intruder, plat::UART_DRIVER, systick::SysTick, uart_ext::BufWrite};
+use crate::{
+    CounterValueExt,
+    intruder::{self, INTRUDER_BREAK},
+    systick::SysTick,
+};
 
 pub struct WasmRunner<'wasm> {
     pub fuel_amount: Option<u32>,
@@ -24,7 +29,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
         }
     }
 
-    pub fn run(&mut self, intruder_state: usize) {
+    pub fn run(&mut self, mut writer: impl Write) {
         let validation_info = wasm::validate(self.wasm_bytes).unwrap();
         let mut store = wasm::Store::new(());
 
@@ -60,8 +65,14 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
 
         PMU::setup_counter(0, pmu::Event::INST_RETIRED);
         PMU::setup_counter(1, pmu::Event::CHAIN);
+
+        // PMU::setup_counter(2, pmu::Event::MEM_ACCESS);
+
         PMU::setup_counter(2, pmu::Event::L1D_CACHE);
         PMU::setup_counter(3, pmu::Event::L1D_CACHE_REFILL);
+
+        // PMU::setup_counter(4, pmu::Event::L2D_CACHE);
+        // PMU::setup_counter(4, pmu::Event::L2D_CACHE_WB);
         PMU::setup_counter(4, pmu::Event::L2D_CACHE_REFILL);
 
         let mut refuel_idx = 0;
@@ -80,7 +91,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
 
             let dt = current - last;
 
-            let pmu_info = PMUInfo {
+            let perf_info = PerfInfo {
                 cycles: PMU::get_cycle_counter().ok(),
 
                 instr: PMU::get_counter(0).chain(PMU::get_counter(1)).ok(),
@@ -107,19 +118,18 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                         fuel: self.fuel_amount,
                         run_idx: self.run_idx,
                         refuel_idx,
-                        intruder_state,
+                        intruder_break: INTRUDER_BREAK.load(core::sync::atomic::Ordering::Acquire),
                         set_mask: unsafe { intruder::SET_MASK },
                         dt,
                         df,
                         acc_t,
                         acc_f,
-                        pmu_info: Some(pmu_info),
+                        perf_info: Some(perf_info),
                     };
 
                     let buf = &mut [0u8; 1024];
                     let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-                    buf[n] = '\n' as u8;
-                    UART_DRIVER.write_bytes(&buf[..n + 1]);
+                    writer.write(&buf[..n]);
 
                     store
                         .access_fuel_mut(&mut resumable_ref, |f| {
@@ -151,19 +161,18 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                         fuel: self.fuel_amount,
                         refuel_idx,
                         run_idx: self.run_idx,
-                        intruder_state,
+                        intruder_break: INTRUDER_BREAK.load(core::sync::atomic::Ordering::Acquire),
                         set_mask: unsafe { intruder::SET_MASK },
                         dt,
                         df,
                         acc_t,
                         acc_f,
-                        pmu_info: Some(pmu_info),
+                        perf_info: Some(perf_info),
                     };
 
                     let buf = &mut [0u8; 1024];
                     let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-                    buf[n] = '\n' as u8;
-                    UART_DRIVER.write_bytes(&buf[..n + 1]);
+                    writer.write(&buf[..n]);
 
                     break;
                 }
