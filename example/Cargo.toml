@@ -15,11 +15,6 @@ qemu = []
 kr260 = []
 tebf0818 = []
 
-[profile.release]
-debug = "full"
-strip = "none"
-split-debuginfo = "off"
-
 [dependencies]
 arm64 = { git = "https://github.com/moritz-meier/arm64-rt.git", features = [
     "cortex-a53",

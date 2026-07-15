@@ -36,7 +36,7 @@ impl<'log> NativeRunner {
         PMU::start();
 
         let last = SysTick::get_time_us();
-        wasm_payload::kernel::run::<256, 256, 256, 256>();
+        wasm_payload::kernel::run::<512, 512, 512, 512>();
 
         let current = SysTick::get_time_us();
         PMU::stop();

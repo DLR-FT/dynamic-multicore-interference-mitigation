@@ -2,7 +2,7 @@ use rand::SeedableRng;
 
 use crate::kernel::array::*;
 
-type T = i64;
+type T = i8;
 
 pub fn run<const NI: usize, const NJ: usize, const NK: usize, const NL: usize>() {
     let ni = NI;

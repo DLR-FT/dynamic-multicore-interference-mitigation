@@ -145,11 +145,11 @@ fn main(_info: EntryInfo) -> ! {
 
     SysTick::wait_us(1000000);
 
-    const WASM_BYTES: &[u8] =
-        include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
+    // const WASM_BYTES: &[u8] =
+    //     include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
-    // let mut runner = native_runner::NativeRunner::new();
-    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(u32::MAX));
+    let mut runner = native_runner::NativeRunner::new();
+    // let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(u32::MAX));
 
     loop {
         unsafe extern "C" {
