@@ -2,8 +2,8 @@ use alloc::vec::Vec;
 
 use analyzer::{PerfInfo, RefuelUpdate};
 use arm64::pmu::{self, PMU};
+use dlr_wasm_interpreter::RunState;
 use embedded_io::Write;
-use wasm::{ExternVal, HaltExecutionError, Value, resumable};
 
 use crate::{
     CounterValueExt,
@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub struct WasmRunner<'wasm> {
-    pub fuel_amount: Option<u32>,
+    pub fuel_amount: Option<u64>,
 
     run_idx: usize,
 
@@ -20,7 +20,7 @@ pub struct WasmRunner<'wasm> {
 }
 
 impl<'wasm, 'log> WasmRunner<'wasm> {
-    pub fn new(wasm_bytes: &'wasm [u8], fuel_amount: Option<u32>) -> Self {
+    pub fn new(wasm_bytes: &'wasm [u8], fuel_amount: Option<u64>) -> Self {
         Self {
             fuel_amount,
             run_idx: 0,
@@ -30,36 +30,24 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
     }
 
     pub fn run(&mut self, mut writer: impl Write) {
-        let validation_info = wasm::validate(self.wasm_bytes).unwrap();
-        let mut store = wasm::Store::new(());
+        let validation_info =
+            dlr_wasm_interpreter::decode_and_validate(self.wasm_bytes, &mut ()).unwrap();
+        let mut store = dlr_wasm_interpreter::Store::new(());
 
-        fn wasm_panic_handler(
-            _: &mut (),
-            _values: Vec<Value>,
-        ) -> Result<Vec<Value>, HaltExecutionError> {
-            Err(HaltExecutionError)
-        }
+        let main = unsafe {
+            store
+                .module_instantiate(&validation_info, alloc::vec![], self.fuel_amount)
+                .unwrap()
+                .module_addr
+        };
 
-        let wasm_panic = store.func_alloc_typed::<(), ()>(wasm_panic_handler);
-
-        let main = store
-            .module_instantiate(
-                &validation_info,
-                alloc::vec![ExternVal::Func(wasm_panic)],
-                self.fuel_amount,
-            )
-            .unwrap()
-            .module_addr;
-
-        let wasm_main = store
-            .instance_export(main, "main")
-            .unwrap()
-            .as_func()
-            .unwrap();
-
-        let resumable_ref = store
-            .create_resumable(wasm_main, alloc::vec![], self.fuel_amount)
-            .unwrap();
+        let wasm_main = unsafe {
+            store
+                .instance_export(main, "main")
+                .unwrap()
+                .as_func()
+                .unwrap()
+        };
 
         PMU::enable();
 
@@ -83,7 +71,11 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
         PMU::start();
 
         let mut last = SysTick::get_time_us();
-        let mut state = store.resume(resumable_ref).unwrap();
+        let mut state = unsafe {
+            store
+                .invoke(wasm_main, Vec::new(), self.fuel_amount)
+                .unwrap()
+        };
 
         loop {
             let current = SysTick::get_time_us();
@@ -101,14 +93,8 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
             };
 
             match state {
-                resumable::RunState::Resumable {
-                    mut resumable_ref, ..
-                } => {
-                    let df = store
-                        .access_fuel_mut(&mut resumable_ref, |f| *f)
-                        .unwrap()
-                        .zip(self.fuel_amount)
-                        .map(|(a, b)| b - a);
+                RunState::Resumable { mut resumable, .. } => {
+                    let df = resumable.fuel().zip(self.fuel_amount).map(|(a, b)| b - a);
 
                     acc_t = acc_t + dt;
                     acc_f = acc_f.zip(df).map(|(a, b)| a + b);
@@ -131,21 +117,17 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                     let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
                     writer.write(&buf[..n]);
 
-                    store
-                        .access_fuel_mut(&mut resumable_ref, |f| {
-                            *f = self.fuel_amount;
-                        })
-                        .unwrap();
+                    *resumable.fuel_mut() = self.fuel_amount;
 
                     refuel_idx = refuel_idx + 1;
                     PMU::reset();
                     PMU::start();
                     last = SysTick::get_time_us();
-                    state = store.resume(resumable_ref).unwrap();
+                    state = unsafe { store.resume_wasm(resumable).unwrap() };
                     continue;
                 }
 
-                resumable::RunState::Finished {
+                RunState::Finished {
                     maybe_remaining_fuel,
                     ..
                 } => {
@@ -175,6 +157,10 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                     writer.write(&buf[..n]);
 
                     break;
+                }
+
+                RunState::HostCalled { .. } => {
+                    panic!("Wasm panic")
                 }
             }
         }

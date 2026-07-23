@@ -37,8 +37,8 @@ embedded-hal-nb = "1.0.0"
 sel4-pl011-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }
 sel4-zynqmp-xuartps-driver = { git = "https://github.com/moritz-meier/rust-sel4.git", branch = "feat/zynqmp-support" }
 
-# anyhow = { version = "1.0.102", default-features = false }
-wasm-interpreter = { workspace = true }
+dlr-wasm-interpreter = { workspace = true }
+
 
 [build-dependencies]
 quote = { workspace = true }

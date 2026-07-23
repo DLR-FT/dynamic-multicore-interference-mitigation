@@ -441,6 +441,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dlr-wasm-interpreter"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d34aa090e31eb7ef4afea874e6e0255e6b1dcf6e16ae58d63ce363e67fc3bc3"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -545,6 +554,7 @@ dependencies = [
  "analyzer",
  "arm-gic",
  "arm64",
+ "dlr-wasm-interpreter",
  "embedded-hal-nb",
  "embedded-io",
  "log",
@@ -554,7 +564,6 @@ dependencies = [
  "serde-json-core",
  "simple-alloc",
  "spin",
- "wasm-interpreter",
  "wasm-payload",
 ]
 
@@ -935,14 +944,6 @@ name = "log"
 version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
-
-[[package]]
-name = "log_wrapper"
-version = "0.1.0"
-source = "git+https://github.com/dlr-ft/wasm-interpreter.git?tag=v0.1.0#dd31ded1d03b56b6c8a04be9f7fa08508f9798a0"
-dependencies = [
- "log",
-]
 
 [[package]]
 name = "memchr"
@@ -1694,15 +1695,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasm-interpreter"
-version = "0.1.0"
-source = "git+https://github.com/dlr-ft/wasm-interpreter.git?tag=v0.1.0#dd31ded1d03b56b6c8a04be9f7fa08508f9798a0"
-dependencies = [
- "libm",
- "log_wrapper",
-]
-
-[[package]]
 name = "wasm-payload"
 version = "0.1.0"
 dependencies = [
@@ -1719,11 +1711,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "dlr-wasm-interpreter",
  "ipc-serde",
  "ipmpsc",
  "serde",
  "serde_nanos",
- "wasm-interpreter",
 ]
 
 [[package]]

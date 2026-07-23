@@ -5,15 +5,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub struct RefuelUpdate {
     pub timestamp: u64,
-    pub fuel: Option<u32>,
+    pub fuel: Option<u64>,
     pub run_idx: usize,
     pub refuel_idx: usize,
     pub intruder_break: bool,
     pub intruder_set_mask: usize,
     pub dt: u64,
-    pub df: Option<u32>,
+    pub df: Option<u64>,
     pub acc_t: u64,
-    pub acc_f: Option<u32>,
+    pub acc_f: Option<u64>,
 
     pub perf_info: Option<PerfInfo>,
 }

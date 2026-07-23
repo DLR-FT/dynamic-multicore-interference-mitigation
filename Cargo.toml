@@ -24,4 +24,4 @@ spin = { version = "0.10.0", default-features = false, features = [
     "spin_mutex",
     "lazy",
 ] }
-wasm-interpreter = { git = "https://github.com/dlr-ft/wasm-interpreter.git", tag = "v0.1.0" }
+dlr-wasm-interpreter = "0.2.0"

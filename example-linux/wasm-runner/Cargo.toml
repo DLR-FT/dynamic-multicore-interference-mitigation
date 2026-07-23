@@ -6,9 +6,9 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
+dlr-wasm-interpreter = { workspace = true }
 ipmpsc = { workspace = true }
 serde = { workspace = true }
 serde_nanos = { workspace = true }
-wasm-interpreter = { workspace = true }
 
 ipc-serde = { path = "../ipc-serde" }
