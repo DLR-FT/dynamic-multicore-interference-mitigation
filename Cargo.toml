@@ -25,3 +25,4 @@ spin = { version = "0.10.0", default-features = false, features = [
     "lazy",
 ] }
 dlr-wasm-interpreter = "0.2.0"
+# dlr-wasm-interpreter = { git = "https://github.com/DLR-FT/wasm-interpreter.git", branch = "dev/limit-testing" } #"0.2.0"

@@ -1,13 +1,13 @@
 use alloc::vec::Vec;
 
-use analyzer::{PerfInfo, RefuelUpdate};
-use arm64::pmu::{self, PMU};
-use dlr_wasm_interpreter::RunState;
+use analyzer::RefuelUpdate;
+use arm64::pmu::PMU;
+use dlr_wasm_interpreter::{ExternVal, FuncType, ResultType, RunState, ValType};
 use embedded_io::Write;
 
 use crate::{
-    CounterValueExt,
     intruder::{self, INTRUDER_BREAK},
+    perfmon::PerfMon,
     systick::SysTick,
 };
 
@@ -34,9 +34,25 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
             dlr_wasm_interpreter::decode_and_validate(self.wasm_bytes, &mut ()).unwrap();
         let mut store = dlr_wasm_interpreter::Store::new(());
 
+        let func_addr = store.func_alloc(
+            FuncType {
+                params: ResultType {
+                    valtypes: Vec::new(),
+                },
+                returns: ResultType {
+                    valtypes: Vec::new(),
+                },
+            },
+            123,
+        );
+
         let main = unsafe {
             store
-                .module_instantiate(&validation_info, alloc::vec![], self.fuel_amount)
+                .module_instantiate(
+                    &validation_info,
+                    alloc::vec![ExternVal::Func(func_addr)],
+                    self.fuel_amount,
+                )
                 .unwrap()
                 .module_addr
         };
@@ -49,26 +65,11 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                 .unwrap()
         };
 
-        PMU::enable();
-
-        PMU::setup_counter(0, pmu::Event::INST_RETIRED);
-        PMU::setup_counter(1, pmu::Event::CHAIN);
-
-        // PMU::setup_counter(2, pmu::Event::MEM_ACCESS);
-
-        PMU::setup_counter(2, pmu::Event::L1D_CACHE);
-        PMU::setup_counter(3, pmu::Event::L1D_CACHE_REFILL);
-
-        // PMU::setup_counter(4, pmu::Event::L2D_CACHE);
-        // PMU::setup_counter(4, pmu::Event::L2D_CACHE_WB);
-        PMU::setup_counter(4, pmu::Event::L2D_CACHE_REFILL);
-
         let mut refuel_idx = 0;
         let mut acc_t = 0;
         let mut acc_f = Some(0);
 
-        PMU::reset();
-        PMU::start();
+        PerfMon::start();
 
         let mut last = SysTick::get_time_us();
         let mut state = unsafe {
@@ -79,18 +80,9 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
 
         loop {
             let current = SysTick::get_time_us();
-            PMU::stop();
+            let perf = PerfMon::stop();
 
             let dt = current - last;
-
-            let perf_info = PerfInfo {
-                cycles: PMU::get_cycle_counter().ok(),
-
-                instr: PMU::get_counter(0).chain(PMU::get_counter(1)).ok(),
-                l1d_access: PMU::get_counter(2).ok(),
-                l1d_refill: PMU::get_counter(3).ok(),
-                l2d_refill: PMU::get_counter(4).ok(),
-            };
 
             match state {
                 RunState::Resumable { mut resumable, .. } => {
@@ -110,7 +102,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                         df,
                         acc_t,
                         acc_f,
-                        perf_info: Some(perf_info),
+                        perf_info: Some(perf),
                     };
 
                     let buf = &mut [0u8; 1024];
@@ -149,7 +141,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                         df,
                         acc_t,
                         acc_f,
-                        perf_info: Some(perf_info),
+                        perf_info: Some(perf),
                     };
 
                     let buf = &mut [0u8; 1024];

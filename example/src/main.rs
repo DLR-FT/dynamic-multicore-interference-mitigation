@@ -30,7 +30,7 @@ mod excps;
 mod intruder;
 mod logger;
 mod native_runner;
-mod perf;
+mod perfmon;
 mod plat;
 mod spin_utils;
 mod stm;
@@ -41,7 +41,7 @@ mod wasm_runner;
 use excps::*;
 use intruder::*;
 use logger::*;
-use perf::*;
+use perfmon::*;
 use plat::*;
 use spin_utils::*;
 use stm::*;
@@ -116,7 +116,7 @@ fn main(_info: EntryInfo) -> ! {
         MMU::enable_el2(l0.base_addr() as u64);
 
         ICache::enable();
-        ICache::enable();
+        DCache::enable();
     }
 
     DCache::op_all(CacheOp::CleanInvalidate);
@@ -145,11 +145,13 @@ fn main(_info: EntryInfo) -> ! {
 
     SysTick::wait_us(1000000);
 
-    // const WASM_BYTES: &[u8] =
-    //     include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
+    // let mut runner = native_runner::NativeRunner::new();
 
-    let mut runner = native_runner::NativeRunner::new();
-    // let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(u32::MAX));
+    const WASM_BYTES: &[u8] =
+        include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
+    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(u64::MAX));
+
+    PerfMon::setup();
 
     loop {
         unsafe extern "C" {

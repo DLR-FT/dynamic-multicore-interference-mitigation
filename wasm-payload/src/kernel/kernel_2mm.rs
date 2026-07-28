@@ -43,17 +43,19 @@ fn kernel<const NI: usize, const NJ: usize, const NK: usize, const NL: usize>(
     d: &mut Array2D<T, NI, NL>,
 ) {
     for i in 0..ni {
-        for k in 0..nk {
-            for j in 0..nj {
+        for j in 0..nj {
+            tmp[i][j] = T::default();
+            for k in 0..nk {
                 tmp[i][j] =
-                    tmp[i][j].wrapping_add(alpha.wrapping_mul(a[i][k]).wrapping_mul(b[k][j]));
+                    tmp[i][j].wrapping_add(alpha.wrapping_mul(a[i][k].wrapping_mul(b[k][j])));
             }
         }
     }
     for i in 0..ni {
-        for k in 0..nj {
-            for j in 0..nl {
-                d[i][j] = d[i][j].wrapping_add(beta.wrapping_mul(tmp[i][k].wrapping_mul(c[k][j])));
+        for l in 0..nl {
+            d[i][l] = T::default();
+            for j in 0..nj {
+                d[i][l] = d[i][l].wrapping_add(beta.wrapping_mul(tmp[i][j].wrapping_mul(c[j][l])));
             }
         }
     }

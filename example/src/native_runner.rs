@@ -1,10 +1,9 @@
-use analyzer::{PerfInfo, RefuelUpdate};
-use arm64::pmu::{self, PMU};
+use analyzer::RefuelUpdate;
 use embedded_io::Write;
 
 use crate::{
     intruder::{self, INTRUDER_BREAK},
-    perf::CounterValueExt,
+    perfmon::PerfMon,
     systick::SysTick,
 };
 
@@ -18,39 +17,15 @@ impl<'log> NativeRunner {
     }
 
     pub fn run(&mut self, mut writer: impl Write) {
-        PMU::enable();
-
-        PMU::setup_counter(0, pmu::Event::INST_RETIRED);
-        PMU::setup_counter(1, pmu::Event::CHAIN);
-
-        // PMU::setup_counter(2, pmu::Event::MEM_ACCESS);
-
-        PMU::setup_counter(2, pmu::Event::L1D_CACHE);
-        PMU::setup_counter(3, pmu::Event::L1D_CACHE_REFILL);
-
-        // PMU::setup_counter(4, pmu::Event::L2D_CACHE);
-        // PMU::setup_counter(4, pmu::Event::L2D_CACHE_WB);
-        PMU::setup_counter(4, pmu::Event::L2D_CACHE_REFILL);
-
-        PMU::reset();
-        PMU::start();
+        PerfMon::start();
 
         let last = SysTick::get_time_us();
         wasm_payload::kernel::run::<512, 512, 512, 512>();
 
         let current = SysTick::get_time_us();
-        PMU::stop();
+        let perf = PerfMon::stop();
 
         let dt = current - last;
-
-        let perf_info = PerfInfo {
-            cycles: PMU::get_cycle_counter().ok(),
-
-            instr: PMU::get_counter(0).chain(PMU::get_counter(1)).ok(),
-            l1d_access: PMU::get_counter(2).ok(),
-            l1d_refill: PMU::get_counter(3).ok(),
-            l2d_refill: PMU::get_counter(4).ok(),
-        };
 
         let update = RefuelUpdate {
             timestamp: current,
@@ -63,7 +38,7 @@ impl<'log> NativeRunner {
             df: None,
             acc_t: dt,
             acc_f: None,
-            perf_info: Some(perf_info),
+            perf_info: Some(perf),
         };
 
         let buf = &mut [0u8; 1024];

@@ -1,6 +1,43 @@
 use core::ops::{BitOr, Shl};
 
-use arm64::pmu::CounterValue;
+use analyzer::PerfInfo;
+use arm64::pmu::{self, CounterValue, PMU};
+
+pub struct PerfMon;
+
+impl PerfMon {
+    pub fn setup() {
+        PMU::enable();
+        PMU::reset();
+
+        PMU::setup_counter(0, pmu::Event::INST_RETIRED);
+        PMU::setup_counter(1, pmu::Event::CHAIN);
+
+        PMU::setup_counter(2, pmu::Event::L1D_CACHE);
+        PMU::setup_counter(3, pmu::Event::CHAIN);
+
+        PMU::setup_counter(4, pmu::Event::L1D_CACHE_REFILL);
+        PMU::setup_counter(5, pmu::Event::L2D_CACHE_REFILL);
+    }
+
+    pub fn start() {
+        PMU::reset();
+        PMU::start();
+    }
+
+    pub fn stop() -> PerfInfo {
+        PMU::stop();
+
+        PerfInfo {
+            cycles: PMU::get_cycle_counter().ok(),
+
+            instr: PMU::get_counter(0).chain(PMU::get_counter(1)).ok(),
+            l1d_access: PMU::get_counter(2).chain(PMU::get_counter(3)).ok(),
+            l1d_refill: PMU::get_counter(4).ok(),
+            l2d_refill: PMU::get_counter(5).ok(),
+        }
+    }
+}
 
 pub trait CounterValueExt {
     type T;
