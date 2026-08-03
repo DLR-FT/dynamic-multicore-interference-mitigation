@@ -44,8 +44,9 @@ use logger::*;
 use perfmon::*;
 use plat::*;
 use spin_utils::*;
-use stm::*;
 use systick::*;
+
+use crate::uart::UartWriter;
 
 #[global_allocator]
 pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
@@ -135,37 +136,43 @@ fn main(_info: EntryInfo) -> ! {
     set_logger(logger).unwrap();
     set_max_level(log::LevelFilter::Info);
 
-    let mut stm_writer = StmWriter::new(0, &STM_DRIVER);
+    #[cfg(not(feature = "tebf0818"))]
+    let mut writer = UartWriter::new(&UART_DRIVER);
+
+    #[cfg(feature = "tebf0818")]
+    let mut writer = StmWriter::new(0, &STM_DRIVER);
 
     info!("Hello World!");
 
     start_core::<SecondaryEntryImpl>(1);
-    // start_core::<SecondaryEntryImpl>(2);
-    // start_core::<SecondaryEntryImpl>(3);
 
     SysTick::wait_us(1000000);
 
-    // let mut runner = native_runner::NativeRunner::new();
+    #[cfg(not(feature = "use-wasm-runner"))]
+    let mut runner = native_runner::NativeRunner::new();
 
+    #[cfg(feature = "use-wasm-runner")]
     const WASM_BYTES: &[u8] =
         include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
+
+    #[cfg(feature = "use-wasm-runner")]
     let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(u64::MAX));
 
     PerfMon::setup();
 
+    unsafe extern "C" {
+        static mut __heap_start: MaybeUninit<u8>;
+        static mut __heap_end: MaybeUninit<u8>;
+    }
+
+    let heap_start = addr_of!(__heap_start);
+    let heap_end = addr_of!(__heap_end);
+
+    let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
+    unsafe { ALLOCATOR.init(heap_buf) };
+
     loop {
-        unsafe extern "C" {
-            static mut __heap_start: MaybeUninit<u8>;
-            static mut __heap_end: MaybeUninit<u8>;
-        }
-
-        let heap_start = addr_of!(__heap_start);
-        let heap_end = addr_of!(__heap_end);
-
-        let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
-        unsafe { ALLOCATOR.init(heap_buf) };
-
-        runner.run(&mut stm_writer);
+        runner.run(&mut writer);
 
         unsafe {
             intruder::SET_MASK = if intruder::SET_MASK == 0x3FF {

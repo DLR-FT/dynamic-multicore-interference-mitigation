@@ -1,12 +1,11 @@
 use core::cell::RefCell;
 
+use spin::{Lazy, mutex::SpinMutex};
+
 use arm_gic::gicv2::{
     GicV2,
     registers::{Gicc, Gicd},
 };
-use spin::{Lazy, mutex::SpinMutex};
-
-use arm64::stm::*;
 
 pub use sel4_pl011_driver as uart;
 
@@ -22,5 +21,3 @@ pub static GIC_DRIVER: Lazy<SpinMutex<RefCell<GicV2>>> = Lazy::new(|| {
 pub static UART_DRIVER: SpinMutex<RefCell<uart::Driver>> = SpinMutex::new(RefCell::new(unsafe {
     uart::Driver::new_uninit(0x0900_0000 as *mut _)
 }));
-
-pub static STM_DRIVER: SpinMutex<RefCell<Stm>> = unimplemented!();
