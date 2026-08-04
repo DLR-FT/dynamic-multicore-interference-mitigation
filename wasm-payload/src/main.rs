@@ -3,11 +3,11 @@
 
 extern crate alloc;
 
-use core::{mem::MaybeUninit, panic::PanicInfo};
+use core::{cell::LazyCell, mem::MaybeUninit, panic::PanicInfo};
 
 use simple_alloc::SimpleAlloc;
 
-use wasm_payload::kernel;
+use wasm_payload::kernel::Kernel2MM;
 
 pub const BUF_LEN: usize = 0x0100_0000;
 pub static BUF: &[MaybeUninit<u8>] = &[MaybeUninit::uninit(); BUF_LEN];
@@ -15,11 +15,18 @@ pub static BUF: &[MaybeUninit<u8>] = &[MaybeUninit::uninit(); BUF_LEN];
 #[global_allocator]
 pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
 
+pub static mut KERNEL: LazyCell<Kernel2MM> = LazyCell::new(|| Kernel2MM::new());
+
+// #[unsafe(no_mangle)]
+// pub fn init() {
+//     unsafe { ALLOCATOR.init(&BUF) };
+
+//     let mut kernel = Kernel2MM::new();
+// }
+
 #[unsafe(no_mangle)]
 pub fn main() {
-    unsafe { ALLOCATOR.init(&BUF) };
-
-    kernel::run::<128, 128, 128, 128>();
+    unsafe { KERNEL.run() };
 }
 
 unsafe extern "C" {
