@@ -144,6 +144,17 @@ fn main(_info: EntryInfo) -> ! {
 
     info!("Hello World!");
 
+    unsafe extern "C" {
+        static mut __heap_start: MaybeUninit<u8>;
+        static mut __heap_end: MaybeUninit<u8>;
+    }
+
+    let heap_start = addr_of!(__heap_start);
+    let heap_end = addr_of!(__heap_end);
+
+    let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
+    unsafe { ALLOCATOR.init(heap_buf) };
+
     start_core::<SecondaryEntryImpl>(1);
 
     SysTick::wait_us(1000000);
@@ -159,17 +170,6 @@ fn main(_info: EntryInfo) -> ! {
     let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(u64::MAX));
 
     PerfMon::setup();
-
-    unsafe extern "C" {
-        static mut __heap_start: MaybeUninit<u8>;
-        static mut __heap_end: MaybeUninit<u8>;
-    }
-
-    let heap_start = addr_of!(__heap_start);
-    let heap_end = addr_of!(__heap_end);
-
-    let heap_buf = unsafe { slice::from_ptr_range(heap_start..heap_end) };
-    unsafe { ALLOCATOR.init(heap_buf) };
 
     loop {
         runner.run(&mut writer);

@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use analyzer::RefuelUpdate;
 use arm64::pmu::PMU;
-use dlr_wasm_interpreter::{ExternVal, FuncType, ResultType, RunState, ValType};
+use dlr_wasm_interpreter::{ExternVal, FuncAddr, FuncType, ResultType, RunState, Store};
 use embedded_io::Write;
 
 use crate::{
@@ -16,22 +16,15 @@ pub struct WasmRunner<'wasm> {
 
     run_idx: usize,
 
-    wasm_bytes: &'wasm [u8],
+    store: Store<'wasm, ()>,
+    main_addr: FuncAddr,
 }
 
 impl<'wasm, 'log> WasmRunner<'wasm> {
     pub fn new(wasm_bytes: &'wasm [u8], fuel_amount: Option<u64>) -> Self {
-        Self {
-            fuel_amount,
-            run_idx: 0,
-
-            wasm_bytes,
-        }
-    }
-
-    pub fn run(&mut self, mut writer: impl Write) {
         let validation_info =
-            dlr_wasm_interpreter::decode_and_validate(self.wasm_bytes, &mut ()).unwrap();
+            dlr_wasm_interpreter::decode_and_validate(wasm_bytes, &mut ()).unwrap();
+
         let mut store = dlr_wasm_interpreter::Store::new(());
 
         let func_addr = store.func_alloc(
@@ -51,13 +44,13 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                 .module_instantiate(
                     &validation_info,
                     alloc::vec![ExternVal::Func(func_addr)],
-                    self.fuel_amount,
+                    fuel_amount,
                 )
                 .unwrap()
                 .module_addr
         };
 
-        let wasm_main = unsafe {
+        let main_addr = unsafe {
             store
                 .instance_export(main, "main")
                 .unwrap()
@@ -65,6 +58,16 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                 .unwrap()
         };
 
+        Self {
+            fuel_amount,
+            run_idx: 0,
+
+            store,
+            main_addr,
+        }
+    }
+
+    pub fn run(&mut self, mut writer: impl Write) {
         let mut refuel_idx = 0;
         let mut acc_t = 0;
         let mut acc_f = Some(0);
@@ -73,8 +76,8 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
 
         let mut last = SysTick::get_time_us();
         let mut state = unsafe {
-            store
-                .invoke(wasm_main, Vec::new(), self.fuel_amount)
+            self.store
+                .invoke(self.main_addr, Vec::new(), self.fuel_amount)
                 .unwrap()
         };
 
@@ -107,7 +110,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
 
                     let buf = &mut [0u8; 1024];
                     let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-                    writer.write(&buf[..n]);
+                    let _ = writer.write(&buf[..n]);
 
                     *resumable.fuel_mut() = self.fuel_amount;
 
@@ -115,7 +118,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
                     PMU::reset();
                     PMU::start();
                     last = SysTick::get_time_us();
-                    state = unsafe { store.resume_wasm(resumable).unwrap() };
+                    state = unsafe { self.store.resume_wasm(resumable).unwrap() };
                     continue;
                 }
 
@@ -146,7 +149,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
 
                     let buf = &mut [0u8; 1024];
                     let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-                    writer.write(&buf[..n]);
+                    let _ = writer.write(&buf[..n]);
 
                     break;
                 }

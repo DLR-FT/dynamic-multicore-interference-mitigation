@@ -1,32 +1,37 @@
 #![no_std]
 #![no_main]
+#![feature(once_cell_get_mut)]
 
 extern crate alloc;
 
-use core::{cell::LazyCell, mem::MaybeUninit, panic::PanicInfo};
+use core::{cell::OnceCell, mem::MaybeUninit, panic::PanicInfo};
 
 use simple_alloc::SimpleAlloc;
 
 use wasm_payload::kernel::Kernel2MM;
 
-pub const BUF_LEN: usize = 0x0100_0000;
-pub static BUF: &[MaybeUninit<u8>] = &[MaybeUninit::uninit(); BUF_LEN];
+pub const ALLOC_BUF_LEN: usize = 0x0100_0000;
+pub static ALLOC_BUF: &[MaybeUninit<u8>] = &[MaybeUninit::uninit(); ALLOC_BUF_LEN];
 
 #[global_allocator]
 pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
+pub static mut ALLOC_INIT: bool = false;
 
-pub static mut KERNEL: LazyCell<Kernel2MM> = LazyCell::new(|| Kernel2MM::new());
-
-// #[unsafe(no_mangle)]
-// pub fn init() {
-//     unsafe { ALLOCATOR.init(&BUF) };
-
-//     let mut kernel = Kernel2MM::new();
-// }
+pub static mut KERNEL: OnceCell<Kernel2MM> = OnceCell::new();
 
 #[unsafe(no_mangle)]
 pub fn main() {
-    unsafe { KERNEL.run() };
+    unsafe {
+        if !ALLOC_INIT {
+            ALLOCATOR.init(&ALLOC_BUF);
+            ALLOC_INIT = true;
+        }
+    }
+
+    #[allow(static_mut_refs)]
+    let kernel = unsafe { KERNEL.get_mut_or_init(|| Kernel2MM::new()) };
+
+    kernel.run();
 }
 
 unsafe extern "C" {

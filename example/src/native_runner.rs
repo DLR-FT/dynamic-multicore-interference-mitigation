@@ -1,5 +1,6 @@
 use analyzer::RefuelUpdate;
 use embedded_io::Write;
+use wasm_payload::kernel::Kernel2MM;
 
 use crate::{
     intruder::{self, INTRUDER_BREAK},
@@ -8,19 +9,23 @@ use crate::{
 };
 
 pub struct NativeRunner {
+    kernel: Kernel2MM,
     run_idx: usize,
 }
 
 impl<'log> NativeRunner {
     pub fn new() -> Self {
-        Self { run_idx: 0 }
+        Self {
+            kernel: Kernel2MM::new(),
+            run_idx: 0,
+        }
     }
 
     pub fn run(&mut self, mut writer: impl Write) {
         PerfMon::start();
 
         let last = SysTick::get_time_us();
-        wasm_payload::kernel::run::<512, 512, 512, 512>();
+        self.kernel.run();
 
         let current = SysTick::get_time_us();
         let perf = PerfMon::stop();
@@ -43,7 +48,7 @@ impl<'log> NativeRunner {
 
         let buf = &mut [0u8; 1024];
         let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-        writer.write(&buf[..n]);
+        let _ = writer.write(&buf[..n]);
 
         self.run_idx += 1;
     }
