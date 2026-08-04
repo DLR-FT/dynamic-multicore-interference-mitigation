@@ -46,6 +46,8 @@ use plat::*;
 use spin_utils::*;
 use systick::*;
 
+#[cfg(feature = "tebf0818")]
+use crate::stm::StmWriter;
 use crate::uart::UartWriter;
 
 #[global_allocator]
@@ -167,7 +169,7 @@ fn main(_info: EntryInfo) -> ! {
         include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
     #[cfg(feature = "use-wasm-runner")]
-    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(u64::MAX));
+    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(10000));
 
     PerfMon::setup();
 
