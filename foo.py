@@ -6,9 +6,9 @@ app = marimo.App()
 
 @app.cell
 def _():
-    import pandas as pd
     import json
-
+    import pandas as pd
+    import plotly.express as px
 
     def read_trace32_printftrace(f):
         text = "".join([l[13:].rstrip() for l in f.readlines()[2:]])
@@ -22,16 +22,30 @@ def _():
     
         return data
 
-    return (read_trace32_printftrace,)
+    return pd, px, read_trace32_printftrace
 
 
 @app.cell
-def _(read_trace32_printftrace):
+def _(pd, read_trace32_printftrace):
     with open("foo.txt") as f:
         data = read_trace32_printftrace(f)
 
+    data = pd.json_normalize(data)
+
     data
-    
+
+    return (data,)
+
+
+@app.cell
+def _(data, px):
+    px.box(data, x="intruder_set_mask", y="perf_info.l2d_refill")
+    return
+
+
+@app.cell
+def _(data, px):
+    px.box(data, x="intruder_set_mask", y="dt")
     return
 
 
