@@ -134,8 +134,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
 
         let buf = &mut [0u8; 1024];
         let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-        buf[n] = '\n' as u8;
-        let _ = writer.write(&buf[..n + 1]);
+        let _ = writer.write(&buf[..n]);
 
         if self.resumeable.is_some() {
             self.refuel_idx += 1;

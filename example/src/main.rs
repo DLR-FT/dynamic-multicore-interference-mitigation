@@ -169,7 +169,7 @@ fn main(_info: EntryInfo) -> ! {
         include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
     #[cfg(feature = "use-wasm-runner")]
-    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(100000));
+    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(10000));
 
     PerfMon::setup();
 
