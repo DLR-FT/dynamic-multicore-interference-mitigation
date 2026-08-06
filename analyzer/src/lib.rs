@@ -14,7 +14,6 @@ pub struct RefuelUpdate {
     pub df: Option<u64>,
     pub acc_t: u64,
     pub acc_f: Option<u64>,
-
     pub perf_info: Option<PerfInfo>,
 }
 
