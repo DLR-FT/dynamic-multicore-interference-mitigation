@@ -19,7 +19,7 @@ def _():
             obj, idx = decoder.raw_decode(text)
             data.append(obj)
             text = text[idx:].lstrip()
-    
+
         return data
 
     return pd, px, read_trace32_printftrace
@@ -27,19 +27,26 @@ def _():
 
 @app.cell
 def _(pd, read_trace32_printftrace):
-    with open("foo.txt") as f:
+    with open("foo2.txt") as f:
         data = read_trace32_printftrace(f)
 
     data = pd.json_normalize(data)
 
-    data
+    data["l2_miss_ratio"] = data["perf_info.l2d_refill"] / data["perf_info.l1d_refill"]
 
+    data
     return (data,)
 
 
 @app.cell
 def _(data, px):
-    px.box(data, x="intruder_set_mask", y="perf_info.l2d_refill")
+    px.box(data, x="intruder_set_mask", y="perf_info.l2d_refill", log_y=True)
+    return
+
+
+@app.cell
+def _(data, px):
+    px.box(data, x="intruder_set_mask", y="l2_miss_ratio", log_y=True)
     return
 
 

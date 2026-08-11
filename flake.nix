@@ -78,6 +78,7 @@
             pkgs.wasmtime
             pkgs.wabt
             pkgs.google-chrome
+            pkgs.cargo-show-asm
 
             (pkgs.python3.withPackages (pyPkgs: [ ]))
           ];

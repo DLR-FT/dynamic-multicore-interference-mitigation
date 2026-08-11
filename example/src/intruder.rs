@@ -45,11 +45,11 @@ const CACHE_WAYS_BITS: usize = 4;
 const CACHE_SET_BITS: usize = CACHE_SIZE_BITS - (CACHE_LINE_BITS + CACHE_WAYS_BITS);
 const CACHE_TAG_BITS: usize = usize::BITS as usize - (CACHE_SET_BITS + CACHE_LINE_BITS);
 
-pub static mut SET_MASK: usize = 0x3FF;
-static mut CACHE_BUF: [CacheBuf; 3] = [CacheBuf::uninit(); 3];
-
 const INTRUDER_BREAK_INTR: IntId = IntId::sgi(3);
+
+pub static mut SET_MASK: usize = 0x3FF;
 pub static INTRUDER_BREAK: AtomicBool = AtomicBool::new(false);
+static mut CACHE_BUF: [CacheBuf; 3] = [CacheBuf::uninit(); 3];
 
 #[derive(Clone, Copy)]
 #[repr(align(0x0010_0000))]
@@ -158,12 +158,6 @@ fn intruder_main(info: EntryInfo) -> ! {
     });
 
     arm_gic::irq_enable();
-
-    const CACHE_SIZE_BITS: usize = 20;
-    const CACHE_LINE_BITS: usize = 6;
-    const CACHE_WAYS_BITS: usize = 4;
-    const CACHE_SET_BITS: usize = CACHE_SIZE_BITS - (CACHE_LINE_BITS + CACHE_WAYS_BITS);
-    const CACHE_TAG_BITS: usize = usize::BITS as usize - (CACHE_SET_BITS + CACHE_LINE_BITS);
 
     const TAG_MASK: usize = usize::MAX << (CACHE_SET_BITS + CACHE_LINE_BITS);
 
