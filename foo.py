@@ -27,7 +27,7 @@ def _():
 
 @app.cell
 def _(pd, read_trace32_printftrace):
-    with open("foo4.txt") as f:
+    with open("foo6.txt") as f:
         data = read_trace32_printftrace(f)
 
     data = pd.json_normalize(data)
@@ -67,19 +67,6 @@ def _(mo):
 def _(data, px):
 
     px.scatter(data, x="l2_miss_ratio", y="cpi")
-    return
-
-
-@app.cell
-def _(data):
-    b = data[data["intruder_set_mask"] == 0x3FF]
-    b
-    return (b,)
-
-
-@app.cell
-def _(b):
-    (b["perf_info.l1d_refill"] / b["perf_info.l1d_access"]).median()
     return
 
 
