@@ -27,12 +27,17 @@ def _():
 
 @app.cell
 def _(pd, read_trace32_printftrace):
-    with open("foo2.txt") as f:
+    with open("foo4.txt") as f:
         data = read_trace32_printftrace(f)
 
     data = pd.json_normalize(data)
 
+    data["cpi"] = data["perf_info.cycles"] / data["perf_info.instr"]
+    data["l1_miss_ratio"] = data["perf_info.l1d_refill"] / data["perf_info.l1d_access"]
     data["l2_miss_ratio"] = data["perf_info.l2d_refill"] / data["perf_info.l1d_refill"]
+
+    dt_baseline = data[data["intruder_set_mask"] == 0]["dt"].median()
+    data["rel_impact"] = data["dt"] / dt_baseline
 
     data
     return (data,)
@@ -40,19 +45,41 @@ def _(pd, read_trace32_printftrace):
 
 @app.cell
 def _(data, px):
-    px.box(data, x="intruder_set_mask", y="perf_info.l2d_refill", log_y=True)
+    px.scatter(data, x="l1_miss_ratio", y="rel_impact")
     return
 
 
 @app.cell
 def _(data, px):
-    px.box(data, x="intruder_set_mask", y="l2_miss_ratio", log_y=True)
+    px.scatter(data, x="l2_miss_ratio", y="rel_impact")
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+ 
+    """)
     return
 
 
 @app.cell
 def _(data, px):
-    px.box(data, x="intruder_set_mask", y="dt")
+
+    px.scatter(data, x="l2_miss_ratio", y="cpi")
+    return
+
+
+@app.cell
+def _(data):
+    b = data[data["intruder_set_mask"] == 0x3FF]
+    b
+    return (b,)
+
+
+@app.cell
+def _(b):
+    (b["perf_info.l1d_refill"] / b["perf_info.l1d_access"]).median()
     return
 
 

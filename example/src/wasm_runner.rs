@@ -28,8 +28,7 @@ pub struct WasmRunner<'wasm> {
 
 impl<'wasm, 'log> WasmRunner<'wasm> {
     pub fn new(wasm_bytes: &'wasm [u8], fuel_amount: Option<u64>) -> Self {
-        let validation_info =
-            dlr_wasm_interpreter::decode_and_validate(wasm_bytes, &mut ()).unwrap();
+        let module = dlr_wasm_interpreter::decode_and_validate(wasm_bytes, &mut ()).unwrap();
 
         let mut store = dlr_wasm_interpreter::Store::new(());
 
@@ -48,13 +47,35 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
         let main = unsafe {
             store
                 .module_instantiate(
-                    &validation_info,
+                    &module,
                     alloc::vec![ExternVal::Func(func_addr)],
                     fuel_amount,
                 )
                 .unwrap()
                 .module_addr
         };
+
+        // let x = unsafe {
+        //     store
+        //         .instance_export(main, "alloc_buf")
+        //         .unwrap()
+        //         .as_global()
+        //         .unwrap()
+        // };
+
+        // let Value::I32(y) = (unsafe { store.global_read(x) }) else {
+        //     panic!("sdhsdhdfdf");
+        // };
+
+        // let mem = unsafe {
+        //     store
+        //         .instance_export(main, "memory")
+        //         .unwrap()
+        //         .as_mem()
+        //         .unwrap()
+        // };
+
+        // let mem_buf = unsafe { store.mem_data_mut(mem) };
 
         let main_addr = unsafe {
             store

@@ -11,12 +11,15 @@ use simple_alloc::SimpleAlloc;
 use wasm_payload::kernel::Kernel2MM;
 
 pub const ALLOC_BUF_LEN: usize = 0x0100_0000;
+
+#[unsafe(export_name = "alloc_buf")]
 pub static ALLOC_BUF: &[MaybeUninit<u8>] = &[MaybeUninit::uninit(); ALLOC_BUF_LEN];
 
 #[global_allocator]
 pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
 pub static mut ALLOC_INIT: bool = false;
 
+#[unsafe(export_name = "kernel")]
 pub static mut KERNEL: OnceCell<Kernel2MM> = OnceCell::new();
 
 #[unsafe(no_mangle)]

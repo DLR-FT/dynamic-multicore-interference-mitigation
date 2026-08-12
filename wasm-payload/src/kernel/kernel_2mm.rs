@@ -50,7 +50,7 @@ impl Kernel2MM {
                 self.tmp[i][j] = T::default();
                 for k in 0..N {
                     self.tmp[i][j] = self.tmp[i][j]
-                        .wrapping_add(alpha.wrapping_mul(self.a[i][k].wrapping_mul(self.b[k][j])));
+                        .wrapping_add(alpha.wrapping_mul(self.a[i][k].wrapping_mul(self.d[k][j])));
                 }
             }
         }

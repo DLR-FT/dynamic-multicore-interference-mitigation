@@ -1,8 +1,8 @@
 use core::arch::asm;
 use core::ptr::write_volatile;
 use core::sync::atomic::AtomicBool;
-use core::usize;
 use core::{cell::RefCell, mem::MaybeUninit};
+use core::{hint, usize};
 
 use arm_gic::gicv2::{SgiTarget, SgiTargetListFilter};
 use arm_gic::{IntId, InterruptGroup};
@@ -162,14 +162,19 @@ fn intruder_main(info: EntryInfo) -> ! {
     const TAG_MASK: usize = usize::MAX << (CACHE_SET_BITS + CACHE_LINE_BITS);
 
     unsafe {
-        let buf = &mut CACHE_BUF[info.cpu_idx].0;
-
         let mut i = 0;
+        let buf_addr = (&mut CACHE_BUF[info.cpu_idx].0) as *const _ as *mut u8;
         loop {
+            if SET_MASK == 0x0 {
+                hint::spin_loop();
+                continue;
+            }
+
             i = ((i + 1) * 1000003) % (1 << CACHE_SIZE_BITS);
 
-            let mut addr = &mut buf[i] as *mut MaybeUninit<u8>;
-            addr = addr.map_addr(|x| x & (TAG_MASK | (SET_MASK << CACHE_LINE_BITS)));
+            let addr = buf_addr
+                .byte_offset(i)
+                .map_addr(|x| x & (TAG_MASK | (SET_MASK << CACHE_LINE_BITS)));
 
             let mut x: u64 = 0xDEADC0DE;
             asm!("mrs {x}, CNTPCT_EL0", x = lateout(reg) x);

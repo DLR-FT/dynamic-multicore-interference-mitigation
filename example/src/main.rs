@@ -185,6 +185,8 @@ fn main(_info: EntryInfo) -> ! {
                 0x3F8
             } else if intruder::SET_MASK == 0x3F8 {
                 0x3F0
+            } else if intruder::SET_MASK == 0x3F0 {
+                0x0
             } else {
                 0x3FF
             }
