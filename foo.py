@@ -27,7 +27,7 @@ def _():
 
 @app.cell
 def _(pd, read_trace32_printftrace):
-    with open("bar7.txt") as f:
+    with open("bar6.txt") as f:
         data = read_trace32_printftrace(f)
 
     data = pd.json_normalize(data)
@@ -36,6 +36,8 @@ def _(pd, read_trace32_printftrace):
     data["intruder_set_mask"] = data["intruder_set_mask"].astype(str)
 
     data["cpi"] = data["perf_info.cycles"] / data["perf_info.instr"]
+    data["api"] = data["perf_info.l1d_access"] / data["perf_info.instr"]
+
     data["l1_miss_ratio"] = data["perf_info.l1d_refill"] / data["perf_info.l1d_access"]
     data["l2_miss_ratio"] = data["perf_info.l2d_refill"] / data["perf_info.l1d_refill"]
 
@@ -70,6 +72,12 @@ def _(data, px):
 @app.cell
 def _(data, px):
     px.scatter(data, x="l2_miss_ratio", y="l1_miss_ratio", color="intruder_set_mask")
+    return
+
+
+@app.cell
+def _(data, px):
+    px.box(data, x="api", color="intruder_set_mask")
     return
 
 
