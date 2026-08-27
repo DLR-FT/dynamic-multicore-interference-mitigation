@@ -163,14 +163,14 @@ fn intruder_main(info: EntryInfo) -> ! {
 
     unsafe {
         let mut i = 0;
-        let buf_addr = (&mut CACHE_BUF[info.cpu_idx].0) as *const _ as *mut u8;
+        let buf_addr = (&mut CACHE_BUF[info.cpu_idx - 1].0) as *const _ as *mut u8;
         loop {
             if SET_MASK == 0x0 {
                 hint::spin_loop();
                 continue;
             }
 
-            i = ((i + 1) * 1000003) % (1 << CACHE_SIZE_BITS);
+            i = ((i + info.cpu_idx as isize) * 1000003) % (1 << CACHE_SIZE_BITS);
 
             let addr = buf_addr
                 .byte_offset(i)

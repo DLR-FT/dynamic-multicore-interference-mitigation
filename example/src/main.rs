@@ -158,6 +158,8 @@ fn main(_info: EntryInfo) -> ! {
     unsafe { ALLOCATOR.init(heap_buf) };
 
     start_core::<SecondaryEntryImpl>(1);
+    start_core::<SecondaryEntryImpl>(2);
+    start_core::<SecondaryEntryImpl>(3);
 
     SysTick::wait_us(1000000);
 
@@ -186,7 +188,17 @@ fn main(_info: EntryInfo) -> ! {
             } else if intruder::SET_MASK == 0x3F8 {
                 0x3F0
             } else if intruder::SET_MASK == 0x3F0 {
-                0x0
+                0x3E0
+            } else if intruder::SET_MASK == 0x3E0 {
+                0x3C0
+            } else if intruder::SET_MASK == 0x3C0 {
+                0x380
+            } else if intruder::SET_MASK == 0x380 {
+                0x300
+            } else if intruder::SET_MASK == 0x300 {
+                0x200
+            } else if intruder::SET_MASK == 0x200 {
+                0
             } else {
                 0x3FF
             }

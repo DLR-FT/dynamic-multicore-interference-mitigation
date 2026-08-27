@@ -27,16 +27,19 @@ def _():
 
 @app.cell
 def _(pd, read_trace32_printftrace):
-    with open("foo6.txt") as f:
+    with open("bar7.txt") as f:
         data = read_trace32_printftrace(f)
 
     data = pd.json_normalize(data)
+
+
+    data["intruder_set_mask"] = data["intruder_set_mask"].astype(str)
 
     data["cpi"] = data["perf_info.cycles"] / data["perf_info.instr"]
     data["l1_miss_ratio"] = data["perf_info.l1d_refill"] / data["perf_info.l1d_access"]
     data["l2_miss_ratio"] = data["perf_info.l2d_refill"] / data["perf_info.l1d_refill"]
 
-    dt_baseline = data[data["intruder_set_mask"] == 0]["dt"].median()
+    dt_baseline = data[data["intruder_set_mask"] == "0"]["dt"].median()
     data["rel_impact"] = data["dt"] / dt_baseline
 
     data
@@ -45,13 +48,7 @@ def _(pd, read_trace32_printftrace):
 
 @app.cell
 def _(data, px):
-    px.scatter(data, x="l1_miss_ratio", y="rel_impact")
-    return
-
-
-@app.cell
-def _(data, px):
-    px.scatter(data, x="l2_miss_ratio", y="rel_impact")
+    px.scatter(data, x="l2_miss_ratio", y="rel_impact", color="intruder_set_mask")
     return
 
 
@@ -66,7 +63,13 @@ def _(mo):
 @app.cell
 def _(data, px):
 
-    px.scatter(data, x="l2_miss_ratio", y="cpi")
+    px.scatter(data, x="l2_miss_ratio", y="cpi", color="intruder_set_mask")
+    return
+
+
+@app.cell
+def _(data, px):
+    px.scatter(data, x="l2_miss_ratio", y="l1_miss_ratio", color="intruder_set_mask")
     return
 
 

@@ -13,7 +13,7 @@ pub struct Kernel2MM {
     a: Box<Array2D<T, N, N>>,
     b: Box<Array2D<T, N, N>>,
     c: Box<Array2D<T, N, N>>,
-    d: Box<Array2D<T, N, N>>,
+    // d: Box<Array2D<T, N, N>>,
 }
 
 impl Kernel2MM {
@@ -24,12 +24,12 @@ impl Kernel2MM {
         let mut a = Array2D::<T, N, N>::uninit();
         let mut b = Array2D::<T, N, N>::uninit();
         let mut c = Array2D::<T, N, N>::uninit();
-        let mut d = Array2D::<T, N, N>::uninit();
+        // let mut d = Array2D::<T, N, N>::uninit();
 
         a.fill_rand(&mut rng);
         b.fill_rand(&mut rng);
         c.fill_rand(&mut rng);
-        d.fill_rand(&mut rng);
+        // d.fill_rand(&mut rng);
 
         Self {
             rng,
@@ -37,7 +37,7 @@ impl Kernel2MM {
             a,
             b,
             c,
-            d,
+            // d,
         }
     }
 
@@ -50,16 +50,16 @@ impl Kernel2MM {
                 self.tmp[i][j] = T::default();
                 for k in 0..N {
                     self.tmp[i][j] = self.tmp[i][j]
-                        .wrapping_add(alpha.wrapping_mul(self.a[i][k].wrapping_mul(self.d[k][j])));
+                        .wrapping_add(alpha.wrapping_mul(self.a[i][k].wrapping_mul(self.b[k][j])));
                 }
             }
         }
 
         for i in 0..N {
             for l in 0..N {
-                self.d[i][l] = T::default();
+                self.a[i][l] = T::default();
                 for j in 0..N {
-                    self.d[i][l] = self.d[i][l]
+                    self.a[i][l] = self.a[i][l]
                         .wrapping_add(beta.wrapping_mul(self.tmp[i][j].wrapping_mul(self.c[j][l])));
                 }
             }
