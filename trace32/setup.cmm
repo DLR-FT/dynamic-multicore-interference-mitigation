@@ -32,6 +32,8 @@ TPIU.PortMode Continuous
 
 ; ETM.TImeMode CycleAccurate+External
 ; ETM.Clock 1050MHz
+; ETM.TimeStampCLOCK 250MHz
+; ETM.TimeStamp ON
 ; ETM.Trace ON
 ; ETM.ON
 

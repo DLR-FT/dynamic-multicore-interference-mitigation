@@ -85,7 +85,6 @@ fn intruder_main(info: EntryInfo) -> ! {
     arm64::sys_regs::CPUACTLR_EL1.modify(|x| {
         x.with_L1RADIS(u2::new(0b11))
             .with_RADIS(u2::new(0b11))
-            .with_DTAH(true)
             .with_L1PCTL(u3::new(0))
     });
 
