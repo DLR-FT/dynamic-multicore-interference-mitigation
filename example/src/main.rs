@@ -68,7 +68,7 @@ const DEVICE_ATTRS: BlockAttrs = BlockAttrs::DEFAULT
     .with_security(SecurityDomain::NonSecure);
 
 const NORMAL_ATTRS: BlockAttrs = BlockAttrs::DEFAULT
-    .with_mem_type(MemoryTyp::Normal_Cacheable_InnerTransient)
+    .with_mem_type(MemoryTyp::Normal_Cacheable)
     .with_shareability(Shareability::Inner)
     .with_access(Access::PrivReadWrite)
     .with_security(SecurityDomain::NonSecure);
@@ -170,7 +170,7 @@ fn main(_info: EntryInfo) -> ! {
         include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
     #[cfg(feature = "use-wasm-runner")]
-    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(25000));
+    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(250000));
 
     PerfMon::setup();
 

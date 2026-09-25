@@ -28,7 +28,7 @@ def _():
 
 @app.cell
 def _(pd, read_trace32_printftrace):
-    with open("xyz5.txt") as f:
+    with open("foo-3.txt") as f:
         data = read_trace32_printftrace(f)
 
     data = pd.json_normalize(data)
@@ -42,20 +42,13 @@ def _(pd, read_trace32_printftrace):
     data["api"] = data["perf_info.l1d_access"] / data["perf_info.instr"]
 
     data["l1_miss_ratio"] = data["perf_info.l2d_access"] / data["perf_info.l1d_access"]
-    data["l2_miss_ratio"] = data["perf_info.bus_access"] / data["perf_info.l2d_access"]
-
-    data["bus_bandwidth"] = 16 * 1000000 * data["perf_info.bus_access"] / data["dt"]
+    data["l2_miss_ratio"] = data["perf_info.l2d_refill"] / data["perf_info.l2d_access"]
 
     dt_baseline = data[data["intruder_set_mask"] == "0"]["dt"].median()
     data["rel_impact"] = data["dt"] / dt_baseline
 
     data
     return (data,)
-
-
-@app.cell
-def _():
-    return
 
 
 @app.cell

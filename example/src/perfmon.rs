@@ -14,10 +14,10 @@ impl PerfMon {
         PMU::setup_counter(1, pmu::Event::CHAIN);
 
         PMU::setup_counter(2, pmu::Event::L1D_CACHE);
-        PMU::setup_counter(3, pmu::Event::L2D_CACHE);
+        PMU::setup_counter(3, pmu::Event::L1D_CACHE_REFILL);
 
-        PMU::setup_counter(4, pmu::Event::BUS_CYCLES);
-        PMU::setup_counter(5, pmu::Event::BUS_ACCESS);
+        PMU::setup_counter(4, pmu::Event::L2D_CACHE);
+        PMU::setup_counter(5, pmu::Event::L2D_CACHE_REFILL);
     }
 
     pub fn start() {
@@ -33,9 +33,9 @@ impl PerfMon {
 
             instr: PMU::get_counter(0).chain(PMU::get_counter(1)).ok(),
             l1d_access: PMU::get_counter(2).ok(),
-            l2d_access: PMU::get_counter(3).ok(),
-            bus_cycles: PMU::get_counter(4).ok(),
-            bus_access: PMU::get_counter(5).ok(),
+            l1d_refill: PMU::get_counter(3).ok(),
+            l2d_access: PMU::get_counter(4).ok(),
+            l2d_refill: PMU::get_counter(5).ok(),
         }
     }
 }
