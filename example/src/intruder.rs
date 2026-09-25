@@ -83,6 +83,7 @@ pub fn intruder_cont() {
 #[secondary_entry(exceptions = Excps)]
 fn intruder_main(info: EntryInfo) -> ! {
     arm64::sys_regs::CPUACTLR_EL1.modify(|x| {
+        // Disable streaming and prefetch features of Cortex-A53
         x.with_L1RADIS(u2::new(0b11))
             .with_RADIS(u2::new(0b11))
             .with_L1PCTL(u3::new(0))
@@ -162,6 +163,8 @@ fn intruder_main(info: EntryInfo) -> ! {
 
     unsafe {
         let mut i = 0;
+
+        // one dummy buffer per CPU core
         let buf_addr = (&mut CACHE_BUF[info.cpu_idx - 1].0) as *const _ as *mut u8;
         loop {
             if SET_MASK == 0x0 {
@@ -169,12 +172,21 @@ fn intruder_main(info: EntryInfo) -> ! {
                 continue;
             }
 
+            // calc psuedo random addr in dummy buffer, using some prime number,
+            // to throw of prefetch and streaming features in the cache hierachy
             i = ((i + info.cpu_idx as isize) * 1000003) % (1 << CACHE_SIZE_BITS);
 
+            // map addr to only access specific cache sets, by masking the set index bit field in the address
+            // SET_MASK controls which sets in the cache will be attacked
+            // SET_MASK = 1023 accesses all sets
+            // SET_MASK = 1022 accesses only every 2nd set
+            // SET_MASK = 1020 accesses only every 4th set
+            // SET_MASK = 0 disables cache intrusion
             let addr = buf_addr
                 .byte_offset(i)
                 .map_addr(|x| x & (TAG_MASK | (SET_MASK << CACHE_LINE_BITS)));
 
+            // access the address by writing some value (current timer counter value)
             let mut x: u64 = 0xDEADC0DE;
             asm!("mrs {x}, CNTPCT_EL0", x = lateout(reg) x);
             write_volatile(addr as *mut u8, x as u8);
