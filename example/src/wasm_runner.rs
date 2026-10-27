@@ -4,7 +4,6 @@ use analyzer::RefuelUpdate;
 use dlr_wasm_interpreter::{
     ExternVal, FuncAddr, FuncType, ResultType, RunState, Store, WasmResumable,
 };
-use embedded_io::Write;
 
 use crate::{
     intruder::{self, INTRUDER_BREAK},
@@ -100,7 +99,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
         }
     }
 
-    pub fn run(&mut self, mut writer: impl Write) {
+    pub fn run(&mut self) -> RefuelUpdate {
         PerfMon::start();
         let last = SysTick::get_time_us();
 
@@ -153,9 +152,9 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
             perf_info: Some(perf),
         };
 
-        let buf = &mut [0u8; 1024];
-        let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-        let _ = writer.write(&buf[..n]);
+        // let buf = &mut [0u8; 1024];
+        // let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
+        // let _ = writer.write(&buf[..n]);
 
         if self.resumeable.is_some() {
             self.refuel_idx += 1;
@@ -166,5 +165,7 @@ impl<'wasm, 'log> WasmRunner<'wasm> {
             self.acc_t = 0;
             self.acc_f = self.fuel_amount.map(|_| 0);
         }
+
+        update
     }
 }

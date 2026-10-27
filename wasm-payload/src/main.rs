@@ -37,6 +37,7 @@ pub fn main() {
     kernel.run();
 }
 
+#[link(wasm_import_module = "env")]
 unsafe extern "C" {
     pub fn host_panic();
 }

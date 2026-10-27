@@ -4,7 +4,7 @@ use rand::{RngExt, SeedableRng, rngs::SmallRng};
 use crate::kernel::array::*;
 
 type T = i8;
-const N: usize = 512;
+const N: usize = 312;
 
 pub struct Kernel2MM {
     rng: SmallRng,

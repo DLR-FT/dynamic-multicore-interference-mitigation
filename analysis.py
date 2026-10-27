@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.16"
+__generated_with = "0.25.2"
 app = marimo.App()
 
 
@@ -24,21 +24,24 @@ def _():
 
         return data
 
-    return go, np, pd, px, read_trace32_printftrace
+    return pd, px, read_trace32_printftrace
 
 
 @app.cell
 def _(pd, read_trace32_printftrace):
-    with open("foo-2.txt") as f:
+    with open("mitigation-1022-10000000-3.txt") as f:
         data = read_trace32_printftrace(f)
 
     data = pd.json_normalize(data)
+
+    data = data[data["run_idx"] > 0].reset_index()
 
     data["timestamp"] = data["timestamp"] - data["timestamp"][0]
     data["timestamp"] = pd.to_datetime(data["timestamp"], unit="us")
 
     data["intruder_set_mask"] = data["intruder_set_mask"].astype(str)
 
+    data["dtdf"] = data["dt"] / data["df"]
     data["ipf"] = data["perf_info.instr"] / data["df"]
 
     data["cpi"] = data["perf_info.cycles"] / data["perf_info.instr"]
@@ -97,6 +100,13 @@ def _(data, px):
 @app.cell
 def _(data, px):
     px.histogram(data, x="dt", histnorm='probability density')
+    px.line(data, x="timestamp", y="dtdf", color="run_idx")
+    return
+
+
+@app.cell
+def _(data, px):
+    px.line(data, x="timestamp", y="intruder_break", color="run_idx")
     return
 
 
@@ -104,65 +114,24 @@ def _(data, px):
 def _(data):
     from statsmodels.tsa.stattools import kpss
 
-    x = data[data["intruder_set_mask"] == "0"]["dt"]
-    x
-    return kpss, x
 
-
-@app.cell
-def _(kpss, x):
-
-    kpss(x, regression="c", result_object=True)
+    kpss(data["dtdf"], regression="c", result_object=True)
 
     return
 
 
 @app.cell
 def _(data):
-    from pyextremes import EVA
+    from statsmodels.tsa.stattools import bds
 
-    y= data.set_index("timestamp")
-
-    return EVA, y
-
-
-@app.cell
-def _(EVA, y):
-
-
-    model = EVA(y["dt"])
-    model.get_extremes(method="BM", block_size="5000us", errors="coerce")
-    model.fit_model()
-    model.get_summary(return_period_size="1us", return_period=[10000, 100000, 1000000, 100000000000000])
+    bds(data["dtdf"])
 
     return
 
 
 @app.cell
-def _(data, go, np):
-    from scipy.stats import genpareto
-
-    gpd = genpareto.fit(data[data["dt"] > 2600]["dt"])
-    print(gpd)
-
-    xline = np.arange(2000, 3000, 1)
-    yline = genpareto.pdf(xline, *gpd)
-    zline = genpareto.cdf(xline, *gpd)
-
-    fig = go.Figure()
-    fig.add_trace(go.Histogram(x=data["dt"], histnorm="probability density"))
-    fig.add_trace(go.Line(x=xline,y=yline))
-
-
-    fig
-    return xline, zline
-
-
-@app.cell
-def _(go, xline, zline):
-    fig2 = go.Figure()
-    fig2.add_trace(go.Line(x=xline,y=zline))
-    fig2
+def _(data):
+    data[["run_idx", "acc_t"]].groupby("run_idx").max().median()
     return
 
 

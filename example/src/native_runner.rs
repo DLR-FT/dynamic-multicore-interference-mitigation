@@ -1,5 +1,4 @@
 use analyzer::RefuelUpdate;
-use embedded_io::Write;
 use wasm_payload::kernel::Kernel2MM;
 
 use crate::{
@@ -21,7 +20,7 @@ impl<'log> NativeRunner {
         }
     }
 
-    pub fn run(&mut self, mut writer: impl Write) {
+    pub fn run(&mut self) -> RefuelUpdate {
         PerfMon::start();
 
         let last = SysTick::get_time_us();
@@ -46,10 +45,12 @@ impl<'log> NativeRunner {
             perf_info: Some(perf),
         };
 
-        let buf = &mut [0u8; 1024];
-        let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
-        let _ = writer.write(&buf[..n]);
+        // let buf = &mut [0u8; 1024];
+        // let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
+        // let _ = writer.write(&buf[..n]);
 
         self.run_idx += 1;
+
+        update
     }
 }

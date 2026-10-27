@@ -20,6 +20,8 @@ use arm64::{
     start,
 };
 
+use embedded_io::Write;
+
 use spin::{Once, mutex::SpinMutex};
 
 use log::{error, info, set_logger, set_max_level};
@@ -29,6 +31,7 @@ use simple_alloc::SimpleAlloc;
 mod excps;
 mod intruder;
 mod logger;
+mod mitigator;
 mod native_runner;
 mod perfmon;
 mod plat;
@@ -48,7 +51,7 @@ use systick::*;
 
 #[cfg(feature = "tebf0818")]
 use crate::stm::StmWriter;
-use crate::uart::UartWriter;
+use crate::{mitigator::Mitigator, uart::UartWriter};
 
 #[global_allocator]
 pub static ALLOCATOR: SimpleAlloc = SimpleAlloc::new();
@@ -170,38 +173,47 @@ fn main(_info: EntryInfo) -> ! {
         include_bytes!("../../target/wasm32-unknown-unknown/release/wasm-payload.wasm");
 
     #[cfg(feature = "use-wasm-runner")]
-    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(250000));
+    let mut runner = wasm_runner::WasmRunner::new(WASM_BYTES, Some(10_000_000));
+
+    let mitigator = Mitigator::new(1_179_239_671, 106_585_211, 10000);
 
     PerfMon::setup();
 
     loop {
-        runner.run(&mut writer);
+        let update = runner.run();
+        mitigator.mitigate(&update);
 
-        unsafe {
-            intruder::SET_MASK = if intruder::SET_MASK == 0x3FF {
-                0x3FE
-            } else if intruder::SET_MASK == 0x3FE {
-                0x3FC
-            } else if intruder::SET_MASK == 0x3FC {
-                0x3F8
-            } else if intruder::SET_MASK == 0x3F8 {
-                0x3F0
-            } else if intruder::SET_MASK == 0x3F0 {
-                0x3E0
-            } else if intruder::SET_MASK == 0x3E0 {
-                0x3C0
-            } else if intruder::SET_MASK == 0x3C0 {
-                0x380
-            } else if intruder::SET_MASK == 0x380 {
-                0x300
-            } else if intruder::SET_MASK == 0x300 {
-                0x200
-            } else if intruder::SET_MASK == 0x200 {
-                0
-            } else {
-                0x3FF
-            }
-        };
+        let buf = &mut [0u8; 1024];
+        let n = serde_json_core::to_slice(&update, &mut buf[..]).unwrap();
+        let _ = writer.write(&buf[..n]);
+
+        // if update.refuel_idx == 0 {
+        //     unsafe {
+        //         intruder::SET_MASK = if intruder::SET_MASK == 0x3FF {
+        //             0x3FE
+        //         } else if intruder::SET_MASK == 0x3FE {
+        //             0x3FC
+        //         } else if intruder::SET_MASK == 0x3FC {
+        //             0x3F8
+        //         } else if intruder::SET_MASK == 0x3F8 {
+        //             0x3F0
+        //         } else if intruder::SET_MASK == 0x3F0 {
+        //             0x3E0
+        //         } else if intruder::SET_MASK == 0x3E0 {
+        //             0x3C0
+        //         } else if intruder::SET_MASK == 0x3C0 {
+        //             0x380
+        //         } else if intruder::SET_MASK == 0x380 {
+        //             0x300
+        //         } else if intruder::SET_MASK == 0x300 {
+        //             0x200
+        //         } else if intruder::SET_MASK == 0x200 {
+        //             0
+        //         } else {
+        //             0x3FF
+        //         }
+        //     };
+        // };
     }
 }
 

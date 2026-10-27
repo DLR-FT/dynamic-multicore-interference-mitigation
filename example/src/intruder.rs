@@ -47,7 +47,7 @@ const CACHE_TAG_BITS: usize = usize::BITS as usize - (CACHE_SET_BITS + CACHE_LIN
 
 const INTRUDER_BREAK_INTR: IntId = IntId::sgi(3);
 
-pub static mut SET_MASK: usize = 0x3FF;
+pub static mut SET_MASK: usize = 0x3FE;
 pub static INTRUDER_BREAK: AtomicBool = AtomicBool::new(false);
 static mut CACHE_BUF: [CacheBuf; 3] = [CacheBuf::uninit(); 3];
 
